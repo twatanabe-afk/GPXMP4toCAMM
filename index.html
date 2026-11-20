@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1901</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1905</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -645,7 +645,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1901</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1905</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1903,9 +1903,28 @@
 
             const { patchedMoov } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, mediaOffsetShift);
 
-            // 最終ファイル構成: [moov以外の全ボックス(拡張されたmoov含む)] + [新規 cammMdatBox]
-            // そのため cammMdatBox のデータ開始位置は (元のファイル総サイズ + moovSizeDelta + 8)
-            const cammMdatDataOffset = rawBytes.byteLength + moovSizeDelta + 8;
+            // 実際に outputChunks に出力する全ボックスの合計バイト長を厳密に積み上げてオフセットを確定させる
+            let actualPreCammBytes = 0;
+            const preCammChunks = [];
+            for (const box of topBoxes) {
+                if (box.type === 'moov') {
+                    preCammChunks.push({ isMoov: true });
+                    actualPreCammBytes += newMoovSize;
+                } else if (box.type === 'mdat' && box.isZeroLength) {
+                    // size=0 (ファイル末尾まで) の mdat に後続ボックスを追加する場合、明示的サイズへ書き換える
+                    const fixedMdat = new Uint8Array(rawBytes.subarray(box.offset, box.offset + box.size));
+                    new DataView(fixedMdat.buffer, fixedMdat.byteOffset, 4).setUint32(0, box.size, false);
+                    preCammChunks.push({ isMoov: false, data: fixedMdat });
+                    actualPreCammBytes += fixedMdat.byteLength;
+                } else {
+                    const slice = rawBytes.subarray(box.offset, box.offset + box.size);
+                    preCammChunks.push({ isMoov: false, data: slice });
+                    actualPreCammBytes += slice.byteLength;
+                }
+            }
+
+            // cammMdatBox のペイロード開始位置 = preCammChunks の実測総バイト数 + cammMdatBox の8バイトヘッダ
+            const cammMdatDataOffset = actualPreCammBytes + 8;
             const finalCammTrak = buildCammTrakBox(newTrackId, samples, cammMdatDataOffset, movieTimescale);
 
             // 拡張された moov ボックスの組み立て
@@ -1917,19 +1936,7 @@
             const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
 
             onProgress('新しいMP4バイナリを結合中...', 90);
-            const outputChunks = [];
-            for (const box of topBoxes) {
-                if (box.type === 'moov') {
-                    outputChunks.push(finalMoovBox);
-                } else if (box.type === 'mdat' && box.isZeroLength) {
-                    // size=0 (ファイル末尾まで) の mdat に後続ボックスを追加する場合、明示的サイズへ書き換える
-                    const fixedMdat = new Uint8Array(rawBytes.subarray(box.offset, box.offset + box.size));
-                    new DataView(fixedMdat.buffer, fixedMdat.byteOffset, 4).setUint32(0, box.size, false);
-                    outputChunks.push(fixedMdat);
-                } else {
-                    outputChunks.push(rawBytes.subarray(box.offset, box.offset + box.size));
-                }
-            }
+            const outputChunks = preCammChunks.map(item => item.isMoov ? finalMoovBox : item.data);
             outputChunks.push(cammMdatBox);
 
             onProgress('書き込み完了・メタデータ検証中...', 98);
