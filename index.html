@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1911</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1916</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -663,7 +663,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1911</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1916</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1602,211 +1602,237 @@
 
         /**
          * moov 内の既存トラックの チャンクオフセット (stco / co64) をシフト補正し、
-         * かつ mvhd の next_track_ID を取得・更新する
+         * 既存の古い camm トラックや古い udta をクリーンアップした上で
+         * mvhd の next_track_ID を取得・更新する
          */
-        function patchMoovOffsetsAndGetNextTrackId(moovBytes, deltaOffset) {
-            const result = new Uint8Array(moovBytes); // コピーを作成
-            const view = new DataView(result.buffer);
+        function cleanAndPatchMoov(moovBytes, deltaOffset) {
+            const view = new DataView(moovBytes.buffer, moovBytes.byteOffset, moovBytes.byteLength);
+            const keptChildren = [];
             let maxTrackId = 1;
             let movieTimescale = 1000;
 
-            function walk(start, end) {
-                let pos = start;
-                while (pos + 8 <= end) {
-                    const size = view.getUint32(pos, false);
-                    if (size < 8 || pos + size > end) break;
-                    const type = String.fromCharCode(
-                        view.getUint8(pos + 4),
-                        view.getUint8(pos + 5),
-                        view.getUint8(pos + 6),
-                        view.getUint8(pos + 7)
-                    );
-
-                    // コンテナボックスは再帰走査
-                    if (['trak', 'mdia', 'minf', 'stbl', 'edts', 'udta'].includes(type)) {
-                        walk(pos + 8, pos + size);
-                    } else if (type === 'tkhd') {
-                        const version = view.getUint8(pos + 8);
-                        const trackId = version === 1
-                            ? view.getUint32(pos + 28, false)
-                            : view.getUint32(pos + 20, false);
-                        if (trackId >= maxTrackId) maxTrackId = trackId + 1;
-                    } else if (type === 'mvhd') {
-                        const version = view.getUint8(pos + 8);
-                        movieTimescale = version === 1
-                            ? view.getUint32(pos + 28, false)
-                            : view.getUint32(pos + 20, false);
-                        const nextIdPos = version === 1 ? pos + 116 : pos + 104;
-                        if (nextIdPos + 4 <= pos + size) {
-                            const curNext = view.getUint32(nextIdPos, false);
-                            if (curNext > maxTrackId) maxTrackId = curNext;
+            // 指定された trak が既存の camm トラックかどうか判定
+            function isCammTrak(trakStart, trakEnd) {
+                let foundCamm = false;
+                const scan = (s, e) => {
+                    let p = s;
+                    while (p + 8 <= e) {
+                        const sz = view.getUint32(p, false);
+                        if (sz < 8 || p + sz > e) break;
+                        const tp = String.fromCharCode(
+                            moovBytes[p + 4], moovBytes[p + 5], moovBytes[p + 6], moovBytes[p + 7]
+                        );
+                        if (['mdia', 'minf', 'stbl'].includes(tp)) {
+                            scan(p + 8, p + sz);
+                        } else if (tp === 'stsd') {
+                            const cnt = view.getUint32(p + 12, false);
+                            let ep = p + 16;
+                            for (let i = 0; i < cnt && ep + 8 <= p + sz; i++) {
+                                const esz = view.getUint32(ep, false);
+                                if (esz < 8) break;
+                                const fmt = String.fromCharCode(
+                                    moovBytes[ep + 4], moovBytes[ep + 5], moovBytes[ep + 6], moovBytes[ep + 7]
+                                );
+                                if (fmt === 'camm') foundCamm = true;
+                                ep += esz;
+                            }
                         }
-                    } else if (type === 'stco' && deltaOffset !== 0) {
-                        const entryCount = view.getUint32(pos + 12, false);
-                        for (let i = 0; i < entryCount; i++) {
-                            const entryPos = pos + 16 + i * 4;
-                            const oldOff = view.getUint32(entryPos, false);
-                            view.setUint32(entryPos, oldOff + deltaOffset, false);
-                        }
-                    } else if (type === 'co64' && deltaOffset !== 0) {
-                        const entryCount = view.getUint32(pos + 12, false);
-                        for (let i = 0; i < entryCount; i++) {
-                            const entryPos = pos + 16 + i * 8;
-                            const high = view.getUint32(entryPos, false);
-                            const low = view.getUint32(entryPos + 4, false);
-                            const val = high * 4294967296 + low + deltaOffset;
-                            view.setUint32(entryPos, Math.floor(val / 4294967296), false);
-                            view.setUint32(entryPos + 4, val >>> 0, false);
-                        }
+                        p += sz;
                     }
-                    pos += size;
-                }
+                };
+                scan(trakStart + 8, trakEnd);
+                return foundCamm;
             }
 
-            walk(8, result.byteLength);
-
-            // mvhd の next_track_ID を更新
+            // 1. moov 直下のボックスを走査し、古い camm trak と古い udta を除外
             let pos = 8;
-            while (pos + 8 <= result.byteLength) {
+            while (pos + 8 <= moovBytes.byteLength) {
                 const size = view.getUint32(pos, false);
+                if (size < 8 || pos + size > moovBytes.byteLength) break;
                 const type = String.fromCharCode(
-                    view.getUint8(pos + 4),
-                    view.getUint8(pos + 5),
-                    view.getUint8(pos + 6),
-                    view.getUint8(pos + 7)
+                    moovBytes[pos + 4], moovBytes[pos + 5], moovBytes[pos + 6], moovBytes[pos + 7]
                 );
-                if (type === 'mvhd') {
-                    const version = view.getUint8(pos + 8);
-                    const nextIdPos = version === 1 ? pos + 116 : pos + 104;
-                    if (nextIdPos + 4 <= pos + size) {
-                        view.setUint32(nextIdPos, maxTrackId + 1, false);
-                    }
-                    break;
+
+                if (type === 'trak' && isCammTrak(pos, pos + size)) {
+                    // 既存の古い camm トラックは除去して重複を防ぐ
+                    pos += size;
+                    continue;
                 }
+                if (type === 'udta') {
+                    // 既存の古い udta は除去して新しい GPS udta に置き換える
+                    pos += size;
+                    continue;
+                }
+
+                const sliceCopy = new Uint8Array(moovBytes.subarray(pos, pos + size));
+                keptChildren.push(sliceCopy);
                 pos += size;
             }
 
-            return { patchedMoov: result, newTrackId: maxTrackId, movieTimescale: movieTimescale || 1000 };
+            const rebuiltMoov = Mp4BoxBuilder.box('moov', ...keptChildren);
+            const rView = new DataView(rebuiltMoov.buffer);
+
+            // 2. 残ったトラックの track_ID 取得と stco / co64 のオフセット補正
+            function walk(start, end) {
+                let p = start;
+                while (p + 8 <= end) {
+                    const size = rView.getUint32(p, false);
+                    if (size < 8 || p + size > end) break;
+                    const type = String.fromCharCode(
+                        rebuiltMoov[p + 4], rebuiltMoov[p + 5], rebuiltMoov[p + 6], rebuiltMoov[p + 7]
+                    );
+
+                    if (['trak', 'mdia', 'minf', 'stbl', 'edts'].includes(type)) {
+                        walk(p + 8, p + size);
+                    } else if (type === 'tkhd') {
+                        const version = rView.getUint8(p + 8);
+                        const trackId = version === 1
+                            ? rView.getUint32(p + 28, false)
+                            : rView.getUint32(p + 20, false);
+                        if (trackId >= maxTrackId) maxTrackId = trackId + 1;
+                    } else if (type === 'mvhd') {
+                        const version = rView.getUint8(p + 8);
+                        movieTimescale = version === 1
+                            ? rView.getUint32(p + 28, false)
+                            : rView.getUint32(p + 20, false);
+                    } else if (type === 'stco' && deltaOffset !== 0) {
+                        const entryCount = rView.getUint32(p + 12, false);
+                        for (let i = 0; i < entryCount; i++) {
+                            const entryPos = p + 16 + i * 4;
+                            const oldOff = rView.getUint32(entryPos, false);
+                            rView.setUint32(entryPos, oldOff + deltaOffset, false);
+                        }
+                    } else if (type === 'co64' && deltaOffset !== 0) {
+                        const entryCount = rView.getUint32(p + 12, false);
+                        for (let i = 0; i < entryCount; i++) {
+                            const entryPos = p + 16 + i * 8;
+                            const high = rView.getUint32(entryPos, false);
+                            const low = rView.getUint32(entryPos + 4, false);
+                            const val = high * 4294967296 + low + deltaOffset;
+                            rView.setUint32(entryPos, Math.floor(val / 4294967296), false);
+                            rView.setUint32(entryPos + 4, val >>> 0, false);
+                        }
+                    }
+                    p += size;
+                }
+            }
+
+            walk(8, rebuiltMoov.byteLength);
+
+            // 3. mvhd の next_track_ID を更新
+            let mPos = 8;
+            while (mPos + 8 <= rebuiltMoov.byteLength) {
+                const size = rView.getUint32(mPos, false);
+                const type = String.fromCharCode(
+                    rebuiltMoov[mPos + 4], rebuiltMoov[mPos + 5], rebuiltMoov[mPos + 6], rebuiltMoov[mPos + 7]
+                );
+                if (type === 'mvhd') {
+                    const version = rView.getUint8(mPos + 8);
+                    const nextIdPos = version === 1 ? mPos + 116 : mPos + 104;
+                    if (nextIdPos + 4 <= mPos + size) {
+                        rView.setUint32(nextIdPos, maxTrackId + 1, false);
+                    }
+                    break;
+                }
+                mPos += size;
+            }
+
+            return { patchedMoov: rebuiltMoov, newTrackId: maxTrackId, movieTimescale: movieTimescale || 1000 };
         }
 
         /**
-         * 新規 CAMM メタデータトラック ('trak' ボックス) を構築
-         * 構築時に stco / co64 のバイト位置も返し、後から確定オフセットを直接書き込めるようにする
+         * Google CAMM 仕様準拠のメタデータトラックボックス (trak) を構築する
          */
-        function buildCammTrakBox(trackId, samples, cammDataStartOffset, movieTimescale = 1000) {
-            const B = Mp4BoxBuilder;
-            const mediaTimescale = 1000; // 1ms精度
-            const totalMediaDurationMs = Math.round(
-                samples.reduce((acc, s) => acc + s.durationSec * mediaTimescale, 0)
-            );
-            const totalMovieDuration = Math.round((totalMediaDurationMs / mediaTimescale) * movieTimescale);
+        function buildCammTrakBox(trackId, samples, chunkDataOffset, movieTimescale) {
+            const trackTimescale = 1000;
+            const totalDurationMs = samples.reduce((acc, s) => acc + Math.max(1, Math.round(s.durationSec * trackTimescale)), 0);
+            const movieDuration = Math.max(1, Math.round((totalDurationMs / trackTimescale) * movieTimescale));
 
-            // 1. tkhd (Track Header Box - 92 bytes)
-            const tkhdBody = new Uint8Array(80);
-            const tkhdView = new DataView(tkhdBody.buffer);
-            tkhdView.setUint32(0, 0, false);                  // creation_time
-            tkhdView.setUint32(4, 0, false);                  // modification_time
-            tkhdView.setUint32(8, trackId, false);            // track_ID
-            tkhdView.setUint32(12, 0, false);                 // reserved
-            tkhdView.setUint32(16, totalMovieDuration, false);// duration (in movie timescale)
-            // unity matrix (offset 36..71)
+            const tkhdPayload = new Uint8Array(80);
+            const tkhdView = new DataView(tkhdPayload.buffer);
+            tkhdView.setUint32(0, 0, false);
+            tkhdView.setUint32(4, 0, false);
+            tkhdView.setUint32(8, trackId, false);
+            tkhdView.setUint32(12, 0, false);
+            tkhdView.setUint32(16, movieDuration, false);
             tkhdView.setUint32(36, 0x00010000, false);
             tkhdView.setUint32(52, 0x00010000, false);
             tkhdView.setUint32(68, 0x40000000, false);
-            const tkhd = B.fullBox('tkhd', 0, 0x000003, tkhdBody); // enabled | in_movie
+            const tkhdBox = Mp4BoxBuilder.fullBox('tkhd', 0, 0x000003, tkhdPayload);
 
-            // 1.5 edts -> elst (Edit List Box: 0秒開始の明示的な同期マッピング)
-            const elstBuf = new Uint8Array(16);
-            const elstView = new DataView(elstBuf.buffer);
-            elstView.setUint32(0, 1, false);                  // entry_count = 1
-            elstView.setUint32(4, totalMovieDuration, false); // segment_duration
-            elstView.setInt32(8, 0, false);                   // media_time = 0
-            elstView.setInt16(12, 1, false);                  // media_rate_integer = 1
-            elstView.setInt16(14, 0, false);                  // media_rate_fraction = 0
-            const elst = B.fullBox('elst', 0, 0, elstBuf);
-            const edts = B.box('edts', elst);
+            const elstPayload = new Uint8Array(16);
+            const elstView = new DataView(elstPayload.buffer);
+            elstView.setUint32(0, 1, false);
+            elstView.setUint32(4, movieDuration, false);
+            elstView.setInt32(8, 0, false);
+            elstView.setUint16(12, 1, false);
+            elstView.setUint16(14, 0, false);
+            const edtsBox = Mp4BoxBuilder.box('edts', Mp4BoxBuilder.fullBox('elst', 0, 0, elstPayload));
 
-            // 2. mdhd (Media Header Box - 32 bytes)
-            const mdhdBody = new Uint8Array(20);
-            const mdhdView = new DataView(mdhdBody.buffer);
-            mdhdView.setUint32(0, 0, false);                     // creation_time
-            mdhdView.setUint32(4, 0, false);                     // modification_time
-            mdhdView.setUint32(8, mediaTimescale, false);        // timescale (1000)
-            mdhdView.setUint32(12, totalMediaDurationMs, false); // duration
-            mdhdView.setUint16(16, 0x55c4, false);               // language ('und')
-            const mdhd = B.fullBox('mdhd', 0, 0, mdhdBody);
+            const mdhdPayload = new Uint8Array(20);
+            const mdhdView = new DataView(mdhdPayload.buffer);
+            mdhdView.setUint32(8, trackTimescale, false);
+            mdhdView.setUint32(12, totalDurationMs, false);
+            mdhdView.setUint16(16, 0x55c4, false);
+            const mdhdBox = Mp4BoxBuilder.fullBox('mdhd', 0, 0, mdhdPayload);
 
-            // 3. hdlr (Handler Reference Box - Google CAMM 正式仕様: handler_type = 'meta')
-            const hdlrFixed = new Uint8Array(20);
-            hdlrFixed.set(B.strToBytes('meta'), 4); // handler_type = 'meta' (Timed Metadata Track)
-            const hdlrName = B.strToBytes('Camera Motion Metadata\0');
-            const hdlr = B.fullBox('hdlr', 0, 0, hdlrFixed, hdlrName);
+            const hdlrName = Mp4BoxBuilder.strToBytes('Camera Motion Metadata\0');
+            const hdlrHeader = new Uint8Array(20);
+            hdlrHeader.set(Mp4BoxBuilder.strToBytes('meta'), 4);
+            const hdlrBox = Mp4BoxBuilder.fullBox('hdlr', 0, 0, hdlrHeader, hdlrName);
 
-            // 4. minf -> nmhd + dinf(dref) + stbl
-            const nmhd = B.fullBox('nmhd', 0, 0);
-            const urlBox = B.fullBox('url ', 0, 0x000001); // self-contained flag
-            const dref = B.fullBox('dref', 0, 0, B.u32(1), urlBox);
-            const dinf = B.box('dinf', dref);
+            const nmhdBox = Mp4BoxBuilder.fullBox('nmhd', 0, 0);
+            const urlBox = Mp4BoxBuilder.fullBox('url ', 0, 0x000001);
+            const drefBox = Mp4BoxBuilder.fullBox('dref', 0, 0, Mp4BoxBuilder.u32(1), urlBox);
+            const dinfBox = Mp4BoxBuilder.box('dinf', drefBox);
 
-            // 5. stsd (Sample Description Box with 'camm' SampleEntry)
-            const cammEntryHeader = new Uint8Array(8);
-            new DataView(cammEntryHeader.buffer).setUint16(6, 1, false); // data_reference_index = 1
-            const cammEntry = B.box('camm', cammEntryHeader);
-            const stsd = B.fullBox('stsd', 0, 0, B.u32(1), cammEntry);
+            const cammEntryPayload = new Uint8Array(8);
+            new DataView(cammEntryPayload.buffer).setUint16(6, 1, false);
+            const cammSampleEntry = Mp4BoxBuilder.box('camm', cammEntryPayload);
+            const stsdBox = Mp4BoxBuilder.fullBox('stsd', 0, 0, Mp4BoxBuilder.u32(1), cammSampleEntry);
 
-            // 6. stts (Decoding Time to Sample Box) - ランレングス圧縮
-            const sttsEntries = [];
-            for (const s of samples) {
-                const delta = Math.max(1, Math.round(s.durationSec * mediaTimescale));
-                if (sttsEntries.length > 0 && sttsEntries[sttsEntries.length - 1].delta === delta) {
-                    sttsEntries[sttsEntries.length - 1].count++;
-                } else {
-                    sttsEntries.push({ count: 1, delta });
-                }
-            }
-            const sttsBuf = new Uint8Array(4 + sttsEntries.length * 8);
-            const sttsView = new DataView(sttsBuf.buffer);
-            sttsView.setUint32(0, sttsEntries.length, false);
-            sttsEntries.forEach((e, i) => {
-                sttsView.setUint32(4 + i * 8, e.count, false);
-                sttsView.setUint32(8 + i * 8, e.delta, false);
+            const sttsEntries = new Uint8Array(4 + samples.length * 8);
+            const sttsView = new DataView(sttsEntries.buffer);
+            sttsView.setUint32(0, samples.length, false);
+            samples.forEach((s, i) => {
+                const dur = Math.max(1, Math.round(s.durationSec * trackTimescale));
+                sttsView.setUint32(4 + i * 8, 1, false);
+                sttsView.setUint32(4 + i * 8 + 4, dur, false);
             });
-            const stts = B.fullBox('stts', 0, 0, sttsBuf);
+            const sttsBox = Mp4BoxBuilder.fullBox('stts', 0, 0, sttsEntries);
 
-            // 7. stsc (Sample To Chunk Box) - 全サンプルを1つの連続チャンクとして格納
-            const stscBuf = new Uint8Array(16);
-            const stscView = new DataView(stscBuf.buffer);
-            stscView.setUint32(0, 1, false);              // entry_count = 1
-            stscView.setUint32(4, 1, false);              // first_chunk = 1
-            stscView.setUint32(8, samples.length, false); // samples_per_chunk = all samples
-            stscView.setUint32(12, 1, false);             // sample_description_index = 1
-            const stsc = B.fullBox('stsc', 0, 0, stscBuf);
+            const stscPayload = new Uint8Array(16);
+            const stscView = new DataView(stscPayload.buffer);
+            stscView.setUint32(0, 1, false);
+            stscView.setUint32(4, 1, false);
+            stscView.setUint32(8, samples.length, false);
+            stscView.setUint32(12, 1, false);
+            const stscBox = Mp4BoxBuilder.fullBox('stsc', 0, 0, stscPayload);
 
-            // 8. stsz (Sample Size Box) - 各サンプル固定60バイト
-            const stszBuf = new Uint8Array(8);
-            const stszView = new DataView(stszBuf.buffer);
-            stszView.setUint32(0, 60, false);             // sample_size = 60 (uniform)
-            stszView.setUint32(4, samples.length, false); // sample_count
-            const stsz = B.fullBox('stsz', 0, 0, stszBuf);
+            const stszPayload = new Uint8Array(8);
+            const stszView = new DataView(stszPayload.buffer);
+            stszView.setUint32(0, 60, false);
+            stszView.setUint32(4, samples.length, false);
+            const stszBox = Mp4BoxBuilder.fullBox('stsz', 0, 0, stszPayload);
 
-            // 9. co64 (64-bit Chunk Offset Box) を常に使用（サイズ不変のため後から確定オフセットを安全に上書き可能）
-            const co64Buf = new Uint8Array(12);
-            const co64View = new DataView(co64Buf.buffer);
-            co64View.setUint32(0, 1, false); // entry_count = 1
-            co64View.setUint32(4, Math.floor(cammDataStartOffset / 4294967296), false);
-            co64View.setUint32(8, cammDataStartOffset >>> 0, false);
-            const co64 = B.fullBox('co64', 0, 0, co64Buf);
+            const co64Payload = new Uint8Array(12);
+            const co64View = new DataView(co64Payload.buffer);
+            co64View.setUint32(0, 1, false);
+            co64View.setUint32(4, Math.floor(chunkDataOffset / 4294967296), false);
+            co64View.setUint32(8, chunkDataOffset >>> 0, false);
+            const co64Box = Mp4BoxBuilder.fullBox('co64', 0, 0, co64Payload);
 
-            const stbl = B.box('stbl', stsd, stts, stsc, stsz, co64);
-            const minf = B.box('minf', nmhd, dinf, stbl);
-            const mdia = B.box('mdia', mdhd, hdlr, minf);
-            return B.box('trak', tkhd, edts, mdia);
+            const stblBox = Mp4BoxBuilder.box('stbl', stsdBox, sttsBox, stscBox, stszBox, co64Box);
+            const minfBox = Mp4BoxBuilder.box('minf', nmhdBox, dinfBox, stblBox);
+            const mdiaBox = Mp4BoxBuilder.box('mdia', mdhdBox, hdlrBox, minfBox);
+
+            return Mp4BoxBuilder.box('trak', tkhdBox, edtsBox, mdiaBox);
         }
 
         /**
-         * 完成した moov バイト配列内の特定 trackId の co64 オフセット値を物理確定値で直接上書きする
+         * 指定された CAMM トラック ID の co64 オフセットを最終確定値に書き換える
          */
-        function patchSpecificTrackCo64(moovBytes, targetTrackId, exactOffset) {
+        function patchSpecificTrackCo64(moovBytes, targetTrackId, finalOffset) {
             const view = new DataView(moovBytes.buffer, moovBytes.byteOffset, moovBytes.byteLength);
             let pos = 8;
             while (pos + 8 <= moovBytes.byteLength) {
@@ -1816,9 +1842,9 @@
                     moovBytes[pos + 4], moovBytes[pos + 5], moovBytes[pos + 6], moovBytes[pos + 7]
                 );
                 if (type === 'trak') {
-                    let foundId = null;
-                    let co64ValuePos = null;
-                    const walk = (s, e) => {
+                    let foundId = -1;
+                    let co64Pos = -1;
+                    const scanTrak = (s, e) => {
                         let p = s;
                         while (p + 8 <= e) {
                             const sz = view.getUint32(p, false);
@@ -1827,20 +1853,20 @@
                                 moovBytes[p + 4], moovBytes[p + 5], moovBytes[p + 6], moovBytes[p + 7]
                             );
                             if (['mdia', 'minf', 'stbl'].includes(tp)) {
-                                walk(p + 8, p + sz);
+                                scanTrak(p + 8, p + sz);
                             } else if (tp === 'tkhd') {
-                                const v = moovBytes[p + 8];
+                                const v = view.getUint8(p + 8);
                                 foundId = v === 1 ? view.getUint32(p + 28, false) : view.getUint32(p + 20, false);
                             } else if (tp === 'co64') {
-                                co64ValuePos = p + 16;
+                                co64Pos = p;
                             }
                             p += sz;
                         }
                     };
-                    walk(pos + 8, pos + size);
-                    if (foundId === targetTrackId && co64ValuePos !== null) {
-                        view.setUint32(co64ValuePos, Math.floor(exactOffset / 4294967296), false);
-                        view.setUint32(co64ValuePos + 4, exactOffset >>> 0, false);
+                    scanTrak(pos + 8, pos + size);
+                    if (foundId === targetTrackId && co64Pos !== -1) {
+                        view.setUint32(co64Pos + 16, Math.floor(finalOffset / 4294967296), false);
+                        view.setUint32(co64Pos + 20, finalOffset >>> 0, false);
                         return true;
                     }
                 }
@@ -1850,76 +1876,78 @@
         }
 
         /**
-         * 標準MP4 / QuickTime / 3GPP 互換のGPSメタデータボックス ('udta') を構築
-         * 1) QuickTime/MP4 標準 '©xyz' (udta直下 および meta/ilst 内)
-         * 2) 3GPP TS 26.244 標準 'loci' (Location Information Box)
-         * により、ExifTool / FFprobe / Windows・Mac・Android・各種ビューアで確実にGPS座標を認識させる
+         * 標準MP4/QuickTime/3GPP互換のGPS位置メタデータボックス (udta: ©xyz + loci + meta/ilst) を生成
          */
         function buildStandardGpsUdtaBox(anchorSample) {
-            const B = Mp4BoxBuilder;
-            const lat = anchorSample.lat;
-            const lon = anchorSample.lon;
-            const ele = anchorSample.ele || 0;
-
-            const latSign = lat >= 0 ? '+' : '-';
-            const lonSign = lon >= 0 ? '+' : '-';
-            const eleSign = ele >= 0 ? '+' : '-';
-
-            const latStr = latSign + Math.abs(lat).toFixed(6).padStart(9, '0');
-            const lonStr = lonSign + Math.abs(lon).toFixed(6).padStart(10, '0');
-            const eleStr = eleSign + Math.abs(ele).toFixed(2);
+            if (!anchorSample) return new Uint8Array(0);
+            const latStr = (anchorSample.lat >= 0 ? '+' : '-') + Math.abs(anchorSample.lat).toFixed(6);
+            const lonStr = (anchorSample.lon >= 0 ? '+' : '-') + Math.abs(anchorSample.lon).toFixed(6);
+            const eleStr = (anchorSample.ele >= 0 ? '+' : '-') + Math.abs(anchorSample.ele).toFixed(2);
             const iso6709 = `${latStr}${lonStr}${eleStr}/`;
-            const strBytes = B.strToBytes(iso6709);
+            const isoBytes = Mp4BoxBuilder.strToBytes(iso6709);
 
-            // (A) QuickTime / MP4 ©xyz box (udta直下)
-            const xyzPayload = new Uint8Array(4 + strBytes.byteLength);
-            const xyzView = new DataView(xyzPayload.buffer);
-            xyzView.setUint16(0, strBytes.byteLength, false);
-            xyzView.setUint16(2, 0x55c4, false); // 'und'
-            xyzPayload.set(strBytes, 4);
+            const qtStrHeader = new Uint8Array(4);
+            const qtView = new DataView(qtStrHeader.buffer);
+            qtView.setUint16(0, isoBytes.byteLength, false);
+            qtView.setUint16(2, 0x15c7, false);
+            const xyzBox = Mp4BoxBuilder.box('\xa9xyz', qtStrHeader, isoBytes);
 
-            const xyzSize = 8 + xyzPayload.byteLength;
-            const xyzBox = new Uint8Array(xyzSize);
-            new DataView(xyzBox.buffer).setUint32(0, xyzSize, false);
-            xyzBox[4] = 0xa9;
-            xyzBox[5] = 0x78;
-            xyzBox[6] = 0x79;
-            xyzBox[7] = 0x7a;
-            xyzBox.set(xyzPayload, 8);
-
-            // (B) 3GPP 'loci' (Location Information Box - FullBox v0)
-            const lociBody = new Uint8Array(18);
+            const lociBody = new Uint8Array(24);
             const lociView = new DataView(lociBody.buffer);
-            lociView.setUint16(0, 0x55c4, false); // language 'und'
-            lociBody[2] = 0; // name = ""
-            lociBody[3] = 0; // role = 0 (shooting location)
-            lociView.setInt32(4, Math.round(lon * 65536), false); // longitude (fixed-point 16.16)
-            lociView.setInt32(8, Math.round(lat * 65536), false); // latitude (fixed-point 16.16)
-            lociView.setInt32(12, Math.round(ele * 65536), false); // altitude (fixed-point 16.16)
-            lociBody[16] = 0; // astronomical_body = ""
-            lociBody[17] = 0; // additional_notes = ""
-            const lociBox = B.fullBox('loci', 0, 0, lociBody);
+            lociView.setUint16(0, 0x15c7, false);
+            lociView.setUint8(2, 0);
+            lociView.setUint8(3, 0);
+            lociView.setInt32(4, Math.round(anchorSample.lon * 65536), false);
+            lociView.setInt32(8, Math.round(anchorSample.lat * 65536), false);
+            lociView.setInt32(12, Math.round(anchorSample.ele * 65536), false);
+            lociView.setUint8(16, 0);
+            const lociBox = Mp4BoxBuilder.fullBox('loci', 0, 0, lociBody);
 
-            // (C) iTunes/MP4 'meta' -> 'hdlr'(mdir) + 'ilst' -> '©xyz' -> 'data'(UTF-8)
-            const metaHdlrFixed = new Uint8Array(20);
-            metaHdlrFixed.set(B.strToBytes('mdir'), 4);
-            metaHdlrFixed.set(B.strToBytes('appl'), 8);
-            const metaHdlr = B.fullBox('hdlr', 0, 0, metaHdlrFixed, new Uint8Array([0]));
+            const metaHdlrHeader = new Uint8Array(20);
+            metaHdlrHeader.set(Mp4BoxBuilder.strToBytes('mdir'), 4);
+            metaHdlrHeader.set(Mp4BoxBuilder.strToBytes('appl'), 8);
+            const metaHdlr = Mp4BoxBuilder.fullBox('hdlr', 0, 0, metaHdlrHeader, new Uint8Array([0]));
+            const dataPayload = new Uint8Array(8 + isoBytes.byteLength);
+            new DataView(dataPayload.buffer).setUint32(0, 1, false);
+            dataPayload.set(isoBytes, 8);
+            const dataBox = Mp4BoxBuilder.box('data', dataPayload);
+            const ilstItem = Mp4BoxBuilder.box('\xa9xyz', dataBox);
+            const ilstBox = Mp4BoxBuilder.box('ilst', ilstItem);
+            const metaBox = Mp4BoxBuilder.fullBox('meta', 0, 0, metaHdlr, ilstBox);
 
-            const dataBox = B.fullBox('data', 0, 1, B.u32(0), strBytes); // type=1 (UTF-8)
-            const ilstItemSize = 8 + dataBox.byteLength;
-            const ilstItem = new Uint8Array(ilstItemSize);
-            new DataView(ilstItem.buffer).setUint32(0, ilstItemSize, false);
-            ilstItem[4] = 0xa9;
-            ilstItem[5] = 0x78;
-            ilstItem[6] = 0x79;
-            ilstItem[7] = 0x7a;
-            ilstItem.set(dataBox, 8);
+            return Mp4BoxBuilder.box('udta', xyzBox, lociBox, metaBox);
+        }
 
-            const ilstBox = B.box('ilst', ilstItem);
-            const metaBox = B.fullBox('meta', 0, 0, metaHdlr, ilstBox);
-
-            return B.box('udta', xyzBox, lociBox, metaBox);
+        /**
+         * Fragmented MP4 (moof) 内の tfhd に base-data-offset-present (0x000001) がある場合の補正
+         */
+        function patchMoofBaseOffsetIfNeeded(moofBytes, deltaOffset) {
+            if (deltaOffset === 0) return moofBytes;
+            const copy = new Uint8Array(moofBytes);
+            const view = new DataView(copy.buffer);
+            const walk = (s, e) => {
+                let p = s;
+                while (p + 8 <= e) {
+                    const sz = view.getUint32(p, false);
+                    if (sz < 8 || p + sz > e) break;
+                    const tp = String.fromCharCode(copy[p + 4], copy[p + 5], copy[p + 6], copy[p + 7]);
+                    if (tp === 'traf') {
+                        walk(p + 8, p + sz);
+                    } else if (tp === 'tfhd') {
+                        const flags = (copy[p + 9] << 16) | (copy[p + 10] << 8) | copy[p + 11];
+                        if ((flags & 0x000001) !== 0 && p + 24 <= p + sz) {
+                            const hi = view.getUint32(p + 16, false);
+                            const lo = view.getUint32(p + 20, false);
+                            const val = hi * 4294967296 + lo + deltaOffset;
+                            view.setUint32(p + 16, Math.floor(val / 4294967296), false);
+                            view.setUint32(p + 20, val >>> 0, false);
+                        }
+                    }
+                    p += sz;
+                }
+            };
+            walk(8, copy.byteLength);
+            return copy;
         }
 
         /**
@@ -1949,19 +1977,20 @@
             // 基準位置のサンプルから標準GPSタグ(udta: ©xyz + loci + meta/ilst)も構築
             const anchorSample = samples.find(s => Math.abs(s.videoTime - state.mp4StartOffset) < 0.2) || samples[0];
             const gpsUdtaBox = buildStandardGpsUdtaBox(anchorSample);
-            // まずダミーオフセット(0)で trak + udta ボックスのサイズを確定させる（co64固定長なので後でサイズが変わらない）
-            const { patchedMoov: tempMoov, newTrackId, movieTimescale } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, 0);
+
+            // まず古い camm トラックと古い udta を除去したクリーンな moov でサイズを確定させる
+            const { patchedMoov: cleanBaseMoov, newTrackId, movieTimescale } = cleanAndPatchMoov(origMoovBytes, 0);
             const dummyTrak = buildCammTrakBox(newTrackId, samples, 0, movieTimescale);
-            const newMoovSize = tempMoov.byteLength + dummyTrak.byteLength + gpsUdtaBox.byteLength;
+            const newMoovSize = cleanBaseMoov.byteLength + dummyTrak.byteLength + gpsUdtaBox.byteLength;
             const moovSizeDelta = newMoovSize - moovBox.size;
 
             // moov が mdat より前に配置されている場合、既存メディアの stco/co64 を moovSizeDelta 分だけシフトする
             const mdatBeforeMoov = topBoxes.some(b => b.type === 'mdat' && b.offset < moovBox.offset);
             const mediaOffsetShift = mdatBeforeMoov ? 0 : moovSizeDelta;
 
-            const { patchedMoov } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, mediaOffsetShift);
+            const { patchedMoov } = cleanAndPatchMoov(origMoovBytes, mediaOffsetShift);
 
-            // 拡張された moov ボックスを先に組み立てる
+            // 拡張された moov ボックスを組み立てる（camm トラックは常に1つだけ存在）
             const newMoovBody = Mp4BoxBuilder.concat([
                 patchedMoov.subarray(8),
                 dummyTrak,
@@ -1976,6 +2005,13 @@
                 if (box.type === 'moov') {
                     outputChunks.push(finalMoovBox);
                     runningByteOffset += finalMoovBox.byteLength;
+                } else if (box.type === 'moof') {
+                    const moofSlice = rawBytes.subarray(box.offset, box.offset + box.size);
+                    const patchedMoof = box.offset > moovBox.offset
+                        ? patchMoofBaseOffsetIfNeeded(moofSlice, moovSizeDelta)
+                        : moofSlice;
+                    outputChunks.push(patchedMoof);
+                    runningByteOffset += patchedMoof.byteLength;
                 } else if (box.type === 'mdat' && box.isZeroLength) {
                     const fixedMdat = new Uint8Array(rawBytes.subarray(box.offset, box.offset + box.size));
                     new DataView(fixedMdat.buffer, fixedMdat.byteOffset, 4).setUint32(0, box.size, false);
