@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1905</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1910</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -475,12 +475,31 @@
                 <!-- 検証結果表示エリア -->
                 <div id="inspectorResultArea" class="hidden space-y-5">
                     <!-- 総合判定バナー -->
-                    <div id="inspectVerdictBanner" class="rounded-xl p-4 border flex items-start gap-3">
-                        <i id="inspectVerdictIcon" data-lucide="check-circle-2" class="w-5 h-5 shrink-0 mt-0.5"></i>
-                        <div class="space-y-1 flex-1 min-w-0">
-                            <div id="inspectVerdictTitle" class="font-bold text-sm">検証結果</div>
-                            <div id="inspectVerdictDesc" class="text-xs leading-relaxed opacity-90"></div>
+                    <div id="inspectVerdictBanner" class="rounded-xl p-4 border flex items-start justify-between gap-3">
+                        <div class="flex items-start gap-3 flex-1 min-w-0">
+                            <i id="inspectVerdictIcon" data-lucide="check-circle-2" class="w-5 h-5 shrink-0 mt-0.5"></i>
+                            <div class="space-y-1 flex-1 min-w-0">
+                                <div id="inspectVerdictTitle" class="font-bold text-sm">検証結果</div>
+                                <div id="inspectVerdictDesc" class="text-xs leading-relaxed opacity-90"></div>
+                            </div>
                         </div>
+                        <button id="btnDownloadDebugJson" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 text-xs font-mono font-semibold transition flex items-center gap-1.5 shrink-0" title="原因究明用のバイナリ解析ダンプ(JSON)を保存">
+                            <i data-lucide="file-code-2" class="w-4 h-4"></i>
+                            <span>デバッグ解析JSON出力</span>
+                        </button>
+                    </div>
+
+                    <!-- デバッグバイナリ診断パネル (Hex Dump & オフセット検証) -->
+                    <div class="rounded-xl bg-slate-950 border border-amber-500/30 overflow-hidden">
+                        <div class="px-3.5 py-2 border-b border-slate-800 bg-amber-950/20 flex items-center justify-between text-xs">
+                            <span class="font-semibold text-amber-300 flex items-center gap-1.5">
+                                <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+                                バイナリ診断ログ & チャンク先頭64バイト Hexダンプ
+                            </span>
+                            <span id="inspectDebugOffsetBadge" class="font-mono text-[11px] text-slate-400">offset: --</span>
+                        </div>
+                        <pre id="inspectDebugDump" class="p-3 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed whitespace-pre-wrap"></pre>
+                    </div>
                     </div>
 
                     <!-- 仕様チェックリスト 4項目 -->
@@ -645,7 +664,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1905</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1910</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -693,6 +712,7 @@
             mp4StartOffset: 0,    // 同期の基準位置となるMP4内の秒数
             lastGeneratedBlob: null,
             lastGeneratedName: null,
+            lastInspectReport: null,
             selectedDirHandle: null,
             map: null,
             inspectMap: null,
@@ -794,6 +814,9 @@
             inspectTracksList: document.getElementById('inspectTracksList'),
             inspectPacketTableMeta: document.getElementById('inspectPacketTableMeta'),
             inspectPacketTableBody: document.getElementById('inspectPacketTableBody'),
+            btnDownloadDebugJson: document.getElementById('btnDownloadDebugJson'),
+            inspectDebugOffsetBadge: document.getElementById('inspectDebugOffsetBadge'),
+            inspectDebugDump: document.getElementById('inspectDebugDump'),
 
             btnHelp: document.getElementById('btnHelp'),
             helpModal: document.getElementById('helpModal'),
@@ -1669,6 +1692,7 @@
 
         /**
          * 新規 CAMM メタデータトラック ('trak' ボックス) を構築
+         * 構築時に stco / co64 のバイト位置も返し、後から確定オフセットを直接書き込めるようにする
          */
         function buildCammTrakBox(trackId, samples, cammDataStartOffset, movieTimescale = 1000) {
             const B = Mp4BoxBuilder;
@@ -1726,7 +1750,6 @@
             const dinf = B.box('dinf', dref);
 
             // 5. stsd (Sample Description Box with 'camm' SampleEntry)
-            // Google CAMM 正式仕様準拠: 8バイト標準SampleEntryヘッダのみ (ボックス全体16バイト)
             const cammEntryHeader = new Uint8Array(8);
             new DataView(cammEntryHeader.buffer).setUint16(6, 1, false); // data_reference_index = 1
             const cammEntry = B.box('camm', cammEntryHeader);
@@ -1741,6 +1764,91 @@
                 } else {
                     sttsEntries.push({ count: 1, delta });
                 }
+            }
+            const sttsBuf = new Uint8Array(4 + sttsEntries.length * 8);
+            const sttsView = new DataView(sttsBuf.buffer);
+            sttsView.setUint32(0, sttsEntries.length, false);
+            sttsEntries.forEach((e, i) => {
+                sttsView.setUint32(4 + i * 8, e.count, false);
+                sttsView.setUint32(8 + i * 8, e.delta, false);
+            });
+            const stts = B.fullBox('stts', 0, 0, sttsBuf);
+
+            // 7. stsc (Sample To Chunk Box) - 全サンプルを1つの連続チャンクとして格納
+            const stscBuf = new Uint8Array(16);
+            const stscView = new DataView(stscBuf.buffer);
+            stscView.setUint32(0, 1, false);              // entry_count = 1
+            stscView.setUint32(4, 1, false);              // first_chunk = 1
+            stscView.setUint32(8, samples.length, false); // samples_per_chunk = all samples
+            stscView.setUint32(12, 1, false);             // sample_description_index = 1
+            const stsc = B.fullBox('stsc', 0, 0, stscBuf);
+
+            // 8. stsz (Sample Size Box) - 各サンプル固定60バイト
+            const stszBuf = new Uint8Array(8);
+            const stszView = new DataView(stszBuf.buffer);
+            stszView.setUint32(0, 60, false);             // sample_size = 60 (uniform)
+            stszView.setUint32(4, samples.length, false); // sample_count
+            const stsz = B.fullBox('stsz', 0, 0, stszBuf);
+
+            // 9. co64 (64-bit Chunk Offset Box) を常に使用（サイズ不変のため後から確定オフセットを安全に上書き可能）
+            const co64Buf = new Uint8Array(12);
+            const co64View = new DataView(co64Buf.buffer);
+            co64View.setUint32(0, 1, false); // entry_count = 1
+            co64View.setUint32(4, Math.floor(cammDataStartOffset / 4294967296), false);
+            co64View.setUint32(8, cammDataStartOffset >>> 0, false);
+            const co64 = B.fullBox('co64', 0, 0, co64Buf);
+
+            const stbl = B.box('stbl', stsd, stts, stsc, stsz, co64);
+            const minf = B.box('minf', nmhd, dinf, stbl);
+            const mdia = B.box('mdia', mdhd, hdlr, minf);
+            return B.box('trak', tkhd, edts, mdia);
+        }
+
+        /**
+         * 完成した moov バイト配列内の特定 trackId の co64 オフセット値を物理確定値で直接上書きする
+         */
+        function patchSpecificTrackCo64(moovBytes, targetTrackId, exactOffset) {
+            const view = new DataView(moovBytes.buffer, moovBytes.byteOffset, moovBytes.byteLength);
+            let pos = 8;
+            while (pos + 8 <= moovBytes.byteLength) {
+                const size = view.getUint32(pos, false);
+                if (size < 8 || pos + size > moovBytes.byteLength) break;
+                const type = String.fromCharCode(
+                    moovBytes[pos + 4], moovBytes[pos + 5], moovBytes[pos + 6], moovBytes[pos + 7]
+                );
+                if (type === 'trak') {
+                    let foundId = null;
+                    let co64ValuePos = null;
+                    const walk = (s, e) => {
+                        let p = s;
+                        while (p + 8 <= e) {
+                            const sz = view.getUint32(p, false);
+                            if (sz < 8 || p + sz > e) break;
+                            const tp = String.fromCharCode(
+                                moovBytes[p + 4], moovBytes[p + 5], moovBytes[p + 6], moovBytes[p + 7]
+                            );
+                            if (['mdia', 'minf', 'stbl'].includes(tp)) {
+                                walk(p + 8, p + sz);
+                            } else if (tp === 'tkhd') {
+                                const v = moovBytes[p + 8];
+                                foundId = v === 1 ? view.getUint32(p + 28, false) : view.getUint32(p + 20, false);
+                            } else if (tp === 'co64') {
+                                co64ValuePos = p + 16;
+                            }
+                            p += sz;
+                        }
+                    };
+                    walk(pos + 8, pos + size);
+                    if (foundId === targetTrackId && co64ValuePos !== null) {
+                        view.setUint32(co64ValuePos, Math.floor(exactOffset / 4294967296), false);
+                        view.setUint32(co64ValuePos + 4, exactOffset >>> 0, false);
+                        return true;
+                    }
+                }
+                pos += size;
+            }
+            return false;
+        }
             }
             const sttsBuf = new Uint8Array(4 + sttsEntries.length * 8);
             const sttsView = new DataView(sttsBuf.buffer);
@@ -1890,8 +1998,7 @@
             // 基準位置のサンプルから標準GPSタグ(udta: ©xyz + loci + meta/ilst)も構築
             const anchorSample = samples.find(s => Math.abs(s.videoTime - state.mp4StartOffset) < 0.2) || samples[0];
             const gpsUdtaBox = buildStandardGpsUdtaBox(anchorSample);
-
-            // まずダミーオフセットで trak + udta ボックスのサイズを確定させる
+            // まずダミーオフセット(0)で trak + udta ボックスのサイズを確定させる（co64固定長なので後でサイズが変わらない）
             const { patchedMoov: tempMoov, newTrackId, movieTimescale } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, 0);
             const dummyTrak = buildCammTrakBox(newTrackId, samples, 0, movieTimescale);
             const newMoovSize = tempMoov.byteLength + dummyTrak.byteLength + gpsUdtaBox.byteLength;
@@ -1903,40 +2010,41 @@
 
             const { patchedMoov } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, mediaOffsetShift);
 
-            // 実際に outputChunks に出力する全ボックスの合計バイト長を厳密に積み上げてオフセットを確定させる
-            let actualPreCammBytes = 0;
-            const preCammChunks = [];
-            for (const box of topBoxes) {
-                if (box.type === 'moov') {
-                    preCammChunks.push({ isMoov: true });
-                    actualPreCammBytes += newMoovSize;
-                } else if (box.type === 'mdat' && box.isZeroLength) {
-                    // size=0 (ファイル末尾まで) の mdat に後続ボックスを追加する場合、明示的サイズへ書き換える
-                    const fixedMdat = new Uint8Array(rawBytes.subarray(box.offset, box.offset + box.size));
-                    new DataView(fixedMdat.buffer, fixedMdat.byteOffset, 4).setUint32(0, box.size, false);
-                    preCammChunks.push({ isMoov: false, data: fixedMdat });
-                    actualPreCammBytes += fixedMdat.byteLength;
-                } else {
-                    const slice = rawBytes.subarray(box.offset, box.offset + box.size);
-                    preCammChunks.push({ isMoov: false, data: slice });
-                    actualPreCammBytes += slice.byteLength;
-                }
-            }
-
-            // cammMdatBox のペイロード開始位置 = preCammChunks の実測総バイト数 + cammMdatBox の8バイトヘッダ
-            const cammMdatDataOffset = actualPreCammBytes + 8;
-            const finalCammTrak = buildCammTrakBox(newTrackId, samples, cammMdatDataOffset, movieTimescale);
-
-            // 拡張された moov ボックスの組み立て
+            // 拡張された moov ボックスを先に組み立てる
             const newMoovBody = Mp4BoxBuilder.concat([
                 patchedMoov.subarray(8),
-                finalCammTrak,
+                dummyTrak,
                 gpsUdtaBox
             ]);
             const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
 
+            // outputChunks を実際に構築しながら、cammMdatBox が配置される物理オフセットを1バイトの狂いなく実測
+            const outputChunks = [];
+            let runningByteOffset = 0;
+            for (const box of topBoxes) {
+                if (box.type === 'moov') {
+                    outputChunks.push(finalMoovBox);
+                    runningByteOffset += finalMoovBox.byteLength;
+                } else if (box.type === 'mdat' && box.isZeroLength) {
+                    const fixedMdat = new Uint8Array(rawBytes.subarray(box.offset, box.offset + box.size));
+                    new DataView(fixedMdat.buffer, fixedMdat.byteOffset, 4).setUint32(0, box.size, false);
+                    outputChunks.push(fixedMdat);
+                    runningByteOffset += fixedMdat.byteLength;
+                } else {
+                    const slice = rawBytes.subarray(box.offset, box.offset + box.size);
+                    outputChunks.push(slice);
+                    runningByteOffset += slice.byteLength;
+                }
+            }
+
+            // cammMdatBox のペイロード開始位置 = これまでの全チャンク実測合計 + 8バイトヘッダ
+            const cammMdatDataOffset = runningByteOffset + 8;
+            const patchedOk = patchSpecificTrackCo64(finalMoovBox, newTrackId, cammMdatDataOffset);
+            if (!patchedOk) {
+                throw new Error('CAMMトラックのチャンクオフセット書き込みに失敗しました。');
+            }
+
             onProgress('新しいMP4バイナリを結合中...', 90);
-            const outputChunks = preCammChunks.map(item => item.isMoov ? finalMoovBox : item.data);
             outputChunks.push(cammMdatBox);
 
             onProgress('書き込み完了・メタデータ検証中...', 98);
@@ -2097,13 +2205,35 @@
 
             const cammTrack = tracks.find(t => t.sampleFormats.includes('camm'));
             const decodedPackets = [];
+            const debugNotes = [];
+            let firstChunkHexDump = '';
+            let firstChunkOffset = null;
+
+            if (cammTrack) {
+                debugNotes.push(`CAMM Track #${cammTrack.id} 検出: hdlr='${cammTrack.handlerType}', sampleCount=${cammTrack.sampleCount}, uniformSampleSize=${cammTrack.uniformSampleSize}, chunkOffsets=[${cammTrack.chunkOffsets.join(', ')}], stsc=${JSON.stringify(cammTrack.stscEntries)}`);
+                if (cammTrack.chunkOffsets.length > 0) {
+                    firstChunkOffset = cammTrack.chunkOffsets[0];
+                    if (firstChunkOffset < buffer.byteLength) {
+                        const dumpLen = Math.min(64, buffer.byteLength - firstChunkOffset);
+                        const hexArr = [];
+                        for (let i = 0; i < dumpLen; i++) {
+                            hexArr.push(bytes[firstChunkOffset + i].toString(16).padStart(2, '0'));
+                        }
+                        firstChunkHexDump = hexArr.join(' ');
+                    } else {
+                        debugNotes.push(`警告: chunkOffset (${firstChunkOffset}) がファイル総サイズ (${buffer.byteLength}) を超えています！`);
+                    }
+                }
+            } else {
+                debugNotes.push('stsd に "camm" を持つトラックが見つかりませんでした。');
+            }
 
             if (cammTrack && cammTrack.chunkOffsets.length > 0 && cammTrack.sampleCount > 0) {
                 // 各サンプルのファイルオフセットを解決してデコード
                 let sampleIdx = 0;
                 for (let cIdx = 0; cIdx < cammTrack.chunkOffsets.length && sampleIdx < cammTrack.sampleCount; cIdx++) {
                     const chunkNum = cIdx + 1;
-                    let samplesInThisChunk = 1;
+                    let samplesInThisChunk = cammTrack.stscEntries.length > 0 ? 1 : cammTrack.sampleCount;
                     for (let e = 0; e < cammTrack.stscEntries.length; e++) {
                         if (chunkNum >= cammTrack.stscEntries[e].firstChunk) {
                             samplesInThisChunk = cammTrack.stscEntries[e].samplesPerChunk;
@@ -2117,7 +2247,11 @@
                             : (cammTrack.sampleSizes[sampleIdx] || 0);
 
                         if (sSize >= 4 && offset + sSize <= buffer.byteLength) {
+                            const pktReserved = view.getUint16(offset, true);
                             const pktType = view.getUint16(offset + 2, true);
+                            if (sampleIdx === 0) {
+                                debugNotes.push(`先頭サンプル(offset=${offset}, size=${sSize}): reserved=${pktReserved}, type=${pktType}`);
+                            }
                             if (pktType === 6 && sSize >= 60) {
                                 const gpsTimeSec = view.getFloat64(offset + 4, true);
                                 const fixType = view.getInt32(offset + 12, true);
@@ -2145,6 +2279,8 @@
                                         ele,
                                         speed
                                     });
+                                } else if (sampleIdx === 0) {
+                                    debugNotes.push(`先頭サンプル座標範囲外: lat=${lat}, lon=${lon}`);
                                 }
                             } else {
                                 decodedPackets.push({
@@ -2158,12 +2294,31 @@
                                     speed: 0
                                 });
                             }
+                        } else if (sampleIdx === 0) {
+                            debugNotes.push(`先頭サンプル範囲外エラー: offset=${offset}, sSize=${sSize}, fileLen=${buffer.byteLength}`);
                         }
                         offset += sSize;
                         sampleIdx++;
                     }
                 }
             }
+
+            const reportObj = {
+                analyzedAt: new Date().toISOString(),
+                appVersion: document.getElementById('appVersionBadge')?.textContent || 'unknown',
+                fileName,
+                fileSize: buffer.byteLength,
+                topBoxes,
+                tracks,
+                cammTrack: cammTrack || null,
+                udtaTags,
+                firstChunkOffset,
+                firstChunkHexDump,
+                debugNotes,
+                decodedPacketCount: decodedPackets.length,
+                sampleDecodedPackets: decodedPackets.slice(0, 20)
+            };
+            state.lastInspectReport = reportObj;
 
             renderInspectorResults({
                 fileName,
@@ -2172,7 +2327,10 @@
                 tracks,
                 cammTrack,
                 udtaTags,
-                decodedPackets
+                decodedPackets,
+                firstChunkOffset,
+                firstChunkHexDump,
+                debugNotes
             });
         }
 
@@ -2181,65 +2339,15 @@
             el.inspectFileName.textContent = res.fileName;
             el.inspectFileMeta.textContent = `${(res.fileSize / (1024 * 1024)).toFixed(2)} MB • ${res.topBoxes.length} トップレベルボックス検出`;
 
-            const gpsPackets = res.decodedPackets.filter(p => p.type === 6 && p.lat !== null);
-            const hasCamm = Boolean(res.cammTrack);
-            const isValidHdlr = hasCamm && (res.cammTrack.handlerType === 'meta' || res.cammTrack.handlerType === 'camm');
-
-            // 総合判定バナー
-            if (hasCamm && isValidHdlr && gpsPackets.length > 0) {
-                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-emerald-950/60 border-emerald-500/40 text-emerald-100 flex items-start gap-3';
-                el.inspectVerdictIcon.setAttribute('data-lucide', 'check-circle-2');
-                el.inspectVerdictIcon.className = 'w-5 h-5 shrink-0 mt-0.5 text-emerald-400';
-                el.inspectVerdictTitle.textContent = '合格: Google CAMM 仕様の MP4 として正しく構成されています';
-                el.inspectVerdictDesc.textContent = `Timed Metadata トラック (hdlr='${res.cammTrack.handlerType}', format='camm') と ${gpsPackets.length} 個の有効な Type 6 GPS バイナリパケットを正常にデコードしました。`;
-            } else if (hasCamm) {
-                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-amber-950/60 border-amber-500/40 text-amber-100 flex items-start gap-3';
-                el.inspectVerdictIcon.setAttribute('data-lucide', 'alert-triangle');
-                el.inspectVerdictIcon.className = 'w-5 h-5 shrink-0 mt-0.5 text-amber-400';
-                el.inspectVerdictTitle.textContent = '注意: camm トラックは存在しますが GPS パケットが読み取れません';
-                el.inspectVerdictDesc.textContent = 'camm トラックは検出されましたが、Type 6 GPS パケットが含まれていないか、チャンクオフセットが一致していません。';
-            } else {
-                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-rose-950/60 border-rose-500/40 text-rose-100 flex items-start gap-3';
-                el.inspectVerdictIcon.setAttribute('data-lucide', 'x-circle');
-                el.inspectVerdictIcon.className = 'w-5 h-5 shrink-0 mt-0.5 text-rose-400';
-                el.inspectVerdictTitle.textContent = '未検出: Google CAMM トラックが含まれていません';
-                el.inspectVerdictDesc.textContent = 'この MP4 ファイル内に stsd="camm" を持つメタデータトラックが見つかりませんでした。';
-            }
-            lucide.createIcons({ root: el.inspectVerdictBanner });
-
-            // 4項目カード
-            el.chkCammTrack.textContent = hasCamm ? `OK (Track #${res.cammTrack.id})` : '未検出';
-            el.chkCammTrack.className = `font-mono text-sm font-bold mt-1 ${hasCamm ? 'text-emerald-400' : 'text-rose-400'}`;
-
-            el.chkHdlrType.textContent = hasCamm ? `'${res.cammTrack.handlerType}'` : '--';
-            el.chkHdlrType.className = `font-mono text-sm font-bold mt-1 ${isValidHdlr ? 'text-emerald-400' : 'text-amber-400'}`;
-
-            el.chkGpsPackets.textContent = `${gpsPackets.length} 件`;
-            el.chkGpsPackets.className = `font-mono text-sm font-bold mt-1 ${gpsPackets.length > 0 ? 'text-sky-300' : 'text-slate-400'}`;
-
-            el.chkStandardTags.textContent = res.udtaTags.length > 0 ? `${res.udtaTags.length} 種検出` : 'なし';
-            el.chkStandardTags.className = `font-mono text-sm font-bold mt-1 ${res.udtaTags.length > 0 ? 'text-emerald-400' : 'text-slate-400'}`;
-
-            // トラック＆ボックス一覧
-            el.inspectBoxSummary.textContent = res.topBoxes.map(b => b.type).join(' → ');
-            el.inspectTracksList.innerHTML = res.tracks.map(t => {
-                const isCamm = t.sampleFormats.includes('camm');
-                return `
-                    <div class="p-2.5 rounded-lg border ${isCamm ? 'bg-emerald-950/30 border-emerald-500/40' : 'bg-slate-900 border-slate-800'}">
-                        <div class="flex items-center justify-between">
-                            <span class="font-bold ${isCamm ? 'text-emerald-300' : 'text-slate-200'}">Track #${t.id} [${t.sampleFormats.join(', ') || 'unknown'}]</span>
-                            <span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">hdlr: '${t.handlerType}'</span>
-                        </div>
-                        <div class="text-[11px] text-slate-400 mt-1">
-                            サンプル数: ${t.sampleCount} • チャンク数: ${t.chunkOffsets.length} • ${t.handlerName || '名称なし'}
-                        </div>
-                    </div>
-                `;
-            }).join('') + (res.udtaTags.length ? `
-                <div class="p-2.5 rounded-lg border bg-slate-900 border-slate-800 text-[11px] text-sky-300">
-                    udta メタデータ: ${res.udtaTags.join(' / ')}
-                </div>
-            ` : '');
+            // バイナリ診断ログ & Hexダンプの表示
+            el.inspectDebugOffsetBadge.textContent = res.firstChunkOffset !== null
+                ? `chunkOffset: ${res.firstChunkOffset} (0x${res.firstChunkOffset.toString(16)}) / fileSize: ${res.fileSize}`
+                : `fileSize: ${res.fileSize}`;
+            const boxLines = res.topBoxes.map(b => `  [${b.type}] offset=${b.offset}, size=${b.size} (end=${b.offset + b.size})`).join('\n');
+            el.inspectDebugDump.textContent =
+                `【解析メモ】\n${(res.debugNotes || []).map(n => '・' + n).join('\n')}\n\n` +
+                `【トップレベルボックス配置】\n${boxLines}\n\n` +
+                `【チャンク先頭64バイト Hexダンプ】\n${res.firstChunkHexDump || '(データなし)'}`;
 
             // パケットテーブル（最大100件抜粋表示）
             const step = Math.max(1, Math.floor(gpsPackets.length / 100));
@@ -2674,6 +2782,26 @@
                 } catch (err) {
                     showToast(err.message || '検証解析に失敗しました', 'error');
                 }
+            });
+
+            // デバッグ解析JSONダウンロード
+            el.btnDownloadDebugJson.addEventListener('click', () => {
+                if (!state.lastInspectReport) {
+                    showToast('先にMP4ファイルを検証してください', 'warning');
+                    return;
+                }
+                const jsonStr = JSON.stringify(state.lastInspectReport, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const base = (state.lastInspectReport.fileName || 'camm_inspect').replace(/\.mp4$/i, '');
+                a.href = url;
+                a.download = `${base}_debug_report.json`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                showToast('デバッグ解析レポート (JSON) を出力しました', 'success');
             });
         }
 
