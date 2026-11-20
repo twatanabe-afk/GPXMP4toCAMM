@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1803</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1809</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -501,7 +501,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1803</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1809</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1105,12 +1105,20 @@
             const firstElapsed = state.gpxPoints[0].elapsedSec;
             const lastElapsed = state.gpxPoints[state.gpxPoints.length - 1].elapsedSec;
 
-            // 範囲外クランプ
+            // 範囲外クランプ: GPX開始位置より前なら開始位置を、終了位置より後なら終了位置を埋め込む
             if (targetGpxElapsed <= firstElapsed) {
-                return { ...state.gpxPoints[0], inRange: targetGpxElapsed >= firstElapsed - 0.5 };
+                return {
+                    ...state.gpxPoints[0],
+                    inRange: false,
+                    clamped: 'start'
+                };
             }
             if (targetGpxElapsed >= lastElapsed) {
-                return { ...state.gpxPoints[state.gpxPoints.length - 1], inRange: false };
+                return {
+                    ...state.gpxPoints[state.gpxPoints.length - 1],
+                    inRange: false,
+                    clamped: 'end'
+                };
             }
 
             // 二分探索で該当区間を検索
@@ -1139,7 +1147,8 @@
                 ele: p0.ele + (p1.ele - p0.ele) * ratio,
                 time: p0.time ? new Date(p0.time.getTime() + deltaFromSyncStart * 1000) : null,
                 elapsedSec: targetGpxElapsed,
-                inRange: true
+                inRange: true,
+                clamped: null
             };
         }
 
@@ -1161,8 +1170,11 @@
             if (interp && interp.inRange) {
                 el.hudSyncBadge.textContent = `ANCHOR LINKED (${sign}${diffFromAnchor.toFixed(2)}s)`;
                 el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 backdrop-blur';
+            } else if (interp && interp.clamped === 'start') {
+                el.hudSyncBadge.textContent = `GPX START HELD (${sign}${diffFromAnchor.toFixed(2)}s)`;
+                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-amber-950/90 text-amber-300 border border-amber-500/40 backdrop-blur';
             } else {
-                el.hudSyncBadge.textContent = `GPX BOUNDARY (${sign}${diffFromAnchor.toFixed(2)}s)`;
+                el.hudSyncBadge.textContent = `GPX END HELD (${sign}${diffFromAnchor.toFixed(2)}s)`;
                 el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-amber-950/90 text-amber-300 border border-amber-500/40 backdrop-blur';
             }
         }
@@ -1537,10 +1549,10 @@
             mdhdView.setUint32(12, totalMediaDurationMs, false); // duration
             mdhdView.setUint16(16, 0x55c4, false);               // language ('und')
             const mdhd = B.fullBox('mdhd', 0, 0, mdhdBody);
-
-            // 3. hdlr (Handler Reference Box - 'meta' / 'Camera Motion Metadata')
+            // 3. hdlr (Handler Reference Box - 'camm' / 'Camera Motion Metadata')
+            // Google CAMM / FFmpeg 仕様: handler_type に 'camm' を設定することで CAMM ストリームとして即座に認識される
             const hdlrFixed = new Uint8Array(20);
-            hdlrFixed.set(B.strToBytes('meta'), 4); // handler_type = 'meta'
+            hdlrFixed.set(B.strToBytes('camm'), 4); // handler_type = 'camm'
             const hdlrName = B.strToBytes('Camera Motion Metadata\0');
             const hdlr = B.fullBox('hdlr', 0, 0, hdlrFixed, hdlrName);
 
@@ -1622,6 +1634,46 @@
         }
 
         /**
+         * 標準MP4/QuickTime互換のGPSメタデータボックス ('udta' 内 '©xyz' ISO 6709 座標) を構築
+         * 汎用プレイヤーやOSプロパティ・FFprobe等でGPS座標が即座に読み取れるようにする
+         */
+        function buildStandardGpsUdtaBox(anchorSample) {
+            const B = Mp4BoxBuilder;
+            const lat = anchorSample.lat;
+            const lon = anchorSample.lon;
+            const ele = anchorSample.ele || 0;
+
+            const latSign = lat >= 0 ? '+' : '-';
+            const lonSign = lon >= 0 ? '+' : '-';
+            const eleSign = ele >= 0 ? '+' : '-';
+
+            const latStr = latSign + Math.abs(lat).toFixed(6).padStart(9, '0');
+            const lonStr = lonSign + Math.abs(lon).toFixed(6).padStart(10, '0');
+            const eleStr = eleSign + Math.abs(ele).toFixed(2);
+            const iso6709 = `${latStr}${lonStr}${eleStr}/`;
+
+            const strBytes = B.strToBytes(iso6709);
+            // QuickTime / MP4 ©xyz payload: [uint16 string_length][uint16 language_code=0x55c4][utf8 string]
+            const xyzPayload = new Uint8Array(4 + strBytes.byteLength);
+            const view = new DataView(xyzPayload.buffer);
+            view.setUint16(0, strBytes.byteLength, false);
+            view.setUint16(2, 0x55c4, false); // 'und'
+            xyzPayload.set(strBytes, 4);
+
+            // ©xyz box type bytes: [0xA9, 'x', 'y', 'z']
+            const xyzSize = 8 + xyzPayload.byteLength;
+            const xyzBox = new Uint8Array(xyzSize);
+            new DataView(xyzBox.buffer).setUint32(0, xyzSize, false);
+            xyzBox[4] = 0xa9;
+            xyzBox[5] = 0x78; // 'x'
+            xyzBox[6] = 0x79; // 'y'
+            xyzBox[7] = 0x7a; // 'z'
+            xyzBox.set(xyzPayload, 8);
+
+            return B.box('udta', xyzBox);
+        }
+
+        /**
          * MP4ファイルを読み込み、CAMMメタデータトラックを注入して新しいBlobを返す
          */
         async function generateCammMp4Blob(mp4File, samples, onProgress) {
@@ -1645,10 +1697,14 @@
             onProgress('トラックテーブルとチャンクオフセットを再計算中...', 75);
             const origMoovBytes = rawBytes.subarray(moovBox.offset, moovBox.offset + moovBox.size);
 
-            // まずダミーオフセットで trak ボックスのサイズを確定させる
+            // 基準位置のサンプルから標準GPSタグ(udta/©xyz)も構築
+            const anchorSample = samples.find(s => Math.abs(s.videoTime - state.mp4StartOffset) < 0.2) || samples[0];
+            const gpsUdtaBox = buildStandardGpsUdtaBox(anchorSample);
+
+            // まずダミーオフセットで trak + udta ボックスのサイズを確定させる
             const { patchedMoov: tempMoov, newTrackId, movieTimescale } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, 0);
             const dummyTrak = buildCammTrakBox(newTrackId, samples, 0, movieTimescale);
-            const newMoovSize = tempMoov.byteLength + dummyTrak.byteLength;
+            const newMoovSize = tempMoov.byteLength + dummyTrak.byteLength + gpsUdtaBox.byteLength;
             const moovSizeDelta = newMoovSize - moovBox.size;
 
             // moov が mdat より前に配置されている場合、既存メディアの stco/co64 を moovSizeDelta 分だけシフトする
@@ -1665,7 +1721,8 @@
             // 拡張された moov ボックスの組み立て
             const newMoovBody = Mp4BoxBuilder.concat([
                 patchedMoov.subarray(8),
-                finalCammTrak
+                finalCammTrak,
+                gpsUdtaBox
             ]);
             const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
 
