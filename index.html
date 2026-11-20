@@ -102,17 +102,13 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1548</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1550</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
             </div>
 
             <div class="flex items-center gap-2 sm:gap-3">
-                <button id="btnLoadDemo" class="text-xs sm:text-sm px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5" title="サンプルGPXとテストMP4を生成して動作を試せます">
-                    <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
-                    <span>サンプルデータ読込</span>
-                </button>
                 <button id="btnHelp" class="p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition" title="使い方・CAMM仕様について">
                     <i data-lucide="help-circle" class="w-5 h-5"></i>
                 </button>
@@ -435,7 +431,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1548</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1550</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -553,7 +549,6 @@
             progressPercent: document.getElementById('progressPercent'),
             progressBar: document.getElementById('progressBar'),
 
-            btnLoadDemo: document.getElementById('btnLoadDemo'),
             btnHelp: document.getElementById('btnHelp'),
             helpModal: document.getElementById('helpModal'),
             btnCloseHelp: document.getElementById('btnCloseHelp'),
@@ -1591,190 +1586,7 @@
 
         /**
          * ============================================================================
-         * 6. サンプルデータ生成機能（GPX + テスト用合成MP4）
-         * ============================================================================
-         */
-        async function loadDemoData() {
-            try {
-                showToast('サンプルGPXとテスト用MP4を生成しています...', 'info');
-
-                // 1. 東京駅周辺〜皇居外苑を走行するリアルなサンプルGPXを生成 (30秒間)
-                const baseTime = new Date('2026-11-20T05:00:00Z');
-                const routeCoords = [
-                    [35.681236, 139.767125, 12.0],
-                    [35.681150, 139.765800, 12.5],
-                    [35.681050, 139.764400, 13.0],
-                    [35.680980, 139.763000, 13.2],
-                    [35.680900, 139.761600, 14.0],
-                    [35.680820, 139.760200, 14.5],
-                    [35.681500, 139.759800, 15.0],
-                    [35.682400, 139.759650, 15.2],
-                    [35.683300, 139.759500, 15.8],
-                    [35.684200, 139.759400, 16.0],
-                    [35.685100, 139.759300, 16.5],
-                    [35.686000, 139.759250, 17.0],
-                    [35.686900, 139.759350, 16.8],
-                    [35.687700, 139.759600, 16.2],
-                    [35.688400, 139.760100, 15.5],
-                    [35.689000, 139.760800, 15.0]
-                ];
-
-                let trkptsXml = '';
-                routeCoords.forEach((c, idx) => {
-                    const t = new Date(baseTime.getTime() + idx * 2000).toISOString();
-                    trkptsXml += `      <trkpt lat="${c[0]}" lon="${c[1]}"><ele>${c[2]}</ele><time>${t}</time></trkpt>\n`;
-                });
-
-                const gpxContent = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="CAMM MP4 Studio" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk>
-    <name>Tokyo Station Demo Route</name>
-    <trkseg>
-${trkptsXml}    </trkseg>
-  </trk>
-</gpx>`;
-                const gpxBlob = new Blob([gpxContent], { type: 'application/gpx+xml' });
-                const gpxFile = new File([gpxBlob], 'tokyo_route_demo.gpx', { type: 'application/gpx+xml' });
-                await handleGpxFile(gpxFile);
-
-                // 2. Canvas + WebCodecs / MediaRecorder または有効な最小MP4コンテナを生成
-                // ブラウザ環境で確実に再生可能かつISO BMFF準拠のMP4を生成するためCanvas録画を使用
-                const mp4File = await createSyntheticMp4File(12);
-                await handleMp4File(mp4File);
-
-                // 初期同期デモ設定: GPXの3番目とMP4の2.0秒を同期ポイントに設定
-                setGpxStartIndex(2);
-                setTimeout(() => {
-                    el.videoPlayer.currentTime = 2.0;
-                    setVideoStartOffset(2.0);
-                    showToast('サンプルデータの準備が完了しました！地図や再生バーを動かして同期を試せます。', 'success');
-                }, 200);
-
-            } catch (err) {
-                console.error(err);
-                showToast('サンプルデータの生成中にエラーが発生しました: ' + err.message, 'error');
-            }
-        }
-
-        /**
-         * ブラウザのCanvasを使ってテスト用のMP4ファイルを生成するヘルパー
-         */
-        async function createSyntheticMp4File(durationSec = 10) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 360;
-            const ctx = canvas.getContext('2d');
-
-            // MediaRecorderがvideo/mp4をサポートしているか確認
-            const mimeTypes = [
-                'video/mp4;codecs=avc1',
-                'video/mp4',
-                'video/webm;codecs=vp9',
-                'video/webm'
-            ];
-            const supportedMime = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
-
-            const stream = canvas.captureStream(30);
-            const recorder = new MediaRecorder(stream, supportedMime ? { mimeType: supportedMime } : undefined);
-            const chunks = [];
-
-            recorder.ondataavailable = (e) => {
-                if (e.data && e.data.size > 0) chunks.push(e.data);
-            };
-
-            let frame = 0;
-            const totalFrames = durationSec * 30;
-            const drawTimer = setInterval(() => {
-                const sec = frame / 30;
-                // 背景グラデーション
-                const grad = ctx.createLinearGradient(0, 0, 640, 360);
-                grad.addColorStop(0, '#0f172a');
-                grad.addColorStop(1, '#1e3a8a');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, 640, 360);
-
-                // 道路風の遠近グリッド線
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-                ctx.lineWidth = 2;
-                const offset = (frame * 8) % 60;
-                for (let y = 180 + offset; y < 360; y += 60) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, y);
-                    ctx.lineTo(640, y);
-                    ctx.stroke();
-                }
-
-                // タイムコードHUD描画
-                ctx.fillStyle = '#f8fafc';
-                ctx.font = 'bold 28px monospace';
-                ctx.fillText(`CAMM TEST FOOTAGE`, 30, 55);
-
-                ctx.fillStyle = '#38bdf8';
-                ctx.font = 'bold 42px monospace';
-                ctx.fillText(`TIME: ${sec.toFixed(2)}s`, 30, 115);
-
-                if (sec >= 2.0 && sec < 2.5) {
-                    ctx.fillStyle = '#fbbf24';
-                    ctx.font = 'bold 24px sans-serif';
-                    ctx.fillText(`★ SYNC POINT MARKER (2.00s)`, 30, 160);
-                }
-
-                frame++;
-                if (frame > totalFrames) {
-                    clearInterval(drawTimer);
-                    if (recorder.state !== 'inactive') recorder.stop();
-                }
-            }, 1000 / 30);
-
-            recorder.start();
-
-            await new Promise(resolve => {
-                recorder.onstop = resolve;
-            });
-
-            // もしブラウザのMediaRecorderがWebMしか出力しなかった場合でも、
-            // CAMMインジェクタがテストできるよう最小限の有効なISO BMFF(ftyp+moov+mdat)をフォールバック構築する
-            const recordedBlob = new Blob(chunks, { type: recordedBlobType(supportedMime) });
-            const buf = await recordedBlob.arrayBuffer();
-            const boxes = parseTopLevelBoxes(buf);
-            if (boxes.some(b => b.type === 'moov')) {
-                return new File([recordedBlob], 'dashcam_sample.mp4', { type: 'video/mp4' });
-            } else {
-                // WebMしか録画できないブラウザ向けの有効な最小ISO BMFF MP4フォールバック
-                const fallbackMp4 = buildMinimalValidMp4(durationSec);
-                return new File([fallbackMp4], 'synthetic_camm_base.mp4', { type: 'video/mp4' });
-            }
-        }
-
-        function recordedBlobType(mime) {
-            return mime && mime.includes('mp4') ? 'video/mp4' : 'video/webm';
-        }
-
-        /**
-         * MediaRecorderがMP4非対応のブラウザ向け: 規格準拠の最小MP4コンテナを生成
-         */
-        function buildMinimalValidMp4(durationSec) {
-            const B = Mp4BoxBuilder;
-            const ftyp = B.box('ftyp', B.strToBytes('isom'), B.u32(512), B.strToBytes('isomiso2mp41'));
-            const mvhdBody = new Uint8Array(96);
-            const mvhdView = new DataView(mvhdBody.buffer);
-            mvhdView.setUint32(8, 1000, false); // timescale
-            mvhdView.setUint32(12, durationSec * 1000, false);
-            mvhdView.setUint32(16, 0x00010000, false); // rate 1.0
-            mvhdView.setUint16(20, 0x0100, false); // volume 1.0
-            mvhdView.setUint32(32, 0x00010000, false);
-            mvhdView.setUint32(48, 0x00010000, false);
-            mvhdView.setUint32(64, 0x40000000, false);
-            mvhdView.setUint32(92, 1, false); // next_track_ID
-            const mvhd = B.fullBox('mvhd', 0, 0, mvhdBody);
-            const moov = B.box('moov', mvhd);
-            const mdat = B.box('mdat', new Uint8Array(64));
-            return new Blob([ftyp, moov, mdat], { type: 'video/mp4' });
-        }
-
-        /**
-         * ============================================================================
-         * 7. イベントリスナー登録
+         * 6. イベントリスナー登録
          * ============================================================================
          */
         function setupEventListeners() {
@@ -1942,9 +1754,6 @@ ${trkptsXml}    </trkseg>
                     }, 2500);
                 }
             });
-
-            // サンプルデータ読込ボタン
-            el.btnLoadDemo.addEventListener('click', loadDemoData);
 
             // ヘルプモーダル開閉
             el.btnHelp.addEventListener('click', () => el.helpModal.classList.remove('hidden'));
