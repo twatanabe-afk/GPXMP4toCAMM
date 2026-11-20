@@ -102,13 +102,17 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1840</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1858</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
             </div>
 
             <div class="flex items-center gap-2 sm:gap-3">
+                <button id="btnOpenInspector" class="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 text-xs font-semibold transition flex items-center gap-1.5" title="生成したCAMM MP4ファイルの内部構造とGPSパケットを検証">
+                    <i data-lucide="search-check" class="w-4 h-4"></i>
+                    <span>CAMM 検証ビューワー</span>
+                </button>
                 <button id="btnHelp" class="p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition" title="使い方・CAMM仕様について">
                     <i data-lucide="help-circle" class="w-5 h-5"></i>
                 </button>
@@ -424,6 +428,146 @@
 
     </main>
 
+    <!-- CAMM MP4 検証ビューワー（インスペクタ）モーダル -->
+    <div id="inspectorModal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            <!-- モーダルヘッダー -->
+            <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/95 shrink-0">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                        <i data-lucide="search-check" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base sm:text-lg text-slate-100 flex items-center gap-2">
+                            CAMM MP4 検証ビューワー
+                            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">ISO BMFF & Google CAMM Inspector</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 hidden sm:block">MP4内のトラック構造・cammサンプルエントリー・Type 6 GPSパケットをバイナリレベルで検証します</p>
+                    </div>
+                </div>
+                <button id="btnCloseInspector" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- モーダルボディ -->
+            <div class="p-5 overflow-y-auto space-y-5 flex-1">
+                <!-- 検証対象MP4ファイル選択エリア -->
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                    <div id="dropZoneInspectMp4" class="flex-1 rounded-xl border-2 border-dashed border-slate-700 hover:border-emerald-500/60 bg-slate-950/70 px-4 py-3.5 cursor-pointer transition flex items-center justify-between gap-3">
+                        <input type="file" id="inputInspectMp4" accept="video/mp4,.mp4" class="hidden">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <i data-lucide="file-video" class="w-5 h-5 text-emerald-400 shrink-0"></i>
+                            <div class="min-w-0">
+                                <div id="inspectFileName" class="text-sm font-semibold text-slate-200 truncate">検証する MP4 ファイルを選択 または ドロップ</div>
+                                <div id="inspectFileMeta" class="text-xs text-slate-400 truncate">出力した *_camm.mp4 や既存の CAMM 動画を読み込めます</div>
+                            </div>
+                        </div>
+                        <span class="px-3 py-1.5 rounded-lg bg-slate-800 text-xs font-medium text-slate-200 border border-slate-700 shrink-0">MP4を選択</span>
+                    </div>
+
+                    <button id="btnInspectLastGenerated" class="hidden px-4 py-3.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 text-xs font-semibold transition flex items-center justify-center gap-2 shrink-0">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        <span>直前に生成したMP4を検証</span>
+                    </button>
+                </div>
+
+                <!-- 検証結果表示エリア -->
+                <div id="inspectorResultArea" class="hidden space-y-5">
+                    <!-- 総合判定バナー -->
+                    <div id="inspectVerdictBanner" class="rounded-xl p-4 border flex items-start gap-3">
+                        <i id="inspectVerdictIcon" data-lucide="check-circle-2" class="w-5 h-5 shrink-0 mt-0.5"></i>
+                        <div class="space-y-1 flex-1 min-w-0">
+                            <div id="inspectVerdictTitle" class="font-bold text-sm">検証結果</div>
+                            <div id="inspectVerdictDesc" class="text-xs leading-relaxed opacity-90"></div>
+                        </div>
+                    </div>
+
+                    <!-- 仕様チェックリスト 4項目 -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="bg-slate-950 rounded-xl p-3 border border-slate-800">
+                            <div class="text-[11px] text-slate-500">CAMM トラック (camm)</div>
+                            <div id="chkCammTrack" class="font-mono text-sm font-bold mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-950 rounded-xl p-3 border border-slate-800">
+                            <div class="text-[11px] text-slate-500">ハンドラ種別 (hdlr)</div>
+                            <div id="chkHdlrType" class="font-mono text-sm font-bold mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-950 rounded-xl p-3 border border-slate-800">
+                            <div class="text-[11px] text-slate-500">有効 GPS パケット数</div>
+                            <div id="chkGpsPackets" class="font-mono text-sm font-bold mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-950 rounded-xl p-3 border border-slate-800">
+                            <div class="text-[11px] text-slate-500">汎用 GPS タグ (©xyz/loci)</div>
+                            <div id="chkStandardTags" class="font-mono text-sm font-bold mt-1">--</div>
+                        </div>
+                    </div>
+
+                    <!-- 地図プレビュー ＆ トラック/パケット詳細 -->
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                        <!-- 抽出GPS軌跡マップ -->
+                        <div class="lg:col-span-6 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex flex-col">
+                            <div class="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
+                                <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-emerald-400"></i>
+                                    抽出された CAMM GPS 軌跡
+                                </span>
+                                <span id="inspectCoordRange" class="font-mono text-[11px] text-slate-400">---</span>
+                            </div>
+                            <div id="inspectMap" class="w-full h-64 bg-slate-900 z-10"></div>
+                        </div>
+
+                        <!-- MP4 ボックス & トラック構成ツリー -->
+                        <div class="lg:col-span-6 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex flex-col">
+                            <div class="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
+                                <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                                    <i data-lucide="box" class="w-3.5 h-3.5 text-sky-400"></i>
+                                    MP4 コンテナ & トラック一覧
+                                </span>
+                                <span id="inspectBoxSummary" class="font-mono text-[11px] text-slate-400">-- boxes</span>
+                            </div>
+                            <div id="inspectTracksList" class="p-3 space-y-2 text-xs font-mono overflow-y-auto max-h-64"></div>
+                        </div>
+                    </div>
+
+                    <!-- CAMM パケットサンプルテーブル -->
+                    <div class="rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+                        <div class="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs">
+                            <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                                <i data-lucide="table" class="w-3.5 h-3.5 text-amber-400"></i>
+                                デコード済み CAMM GPS パケット一覧（先頭〜末尾抜粋）
+                            </span>
+                            <span id="inspectPacketTableMeta" class="font-mono text-[11px] text-slate-400">Type 6 (GPS)</span>
+                        </div>
+                        <div class="overflow-x-auto max-h-52">
+                            <table class="w-full text-left border-collapse text-xs font-mono">
+                                <thead class="bg-slate-900 text-slate-400 sticky top-0">
+                                    <tr>
+                                        <th class="py-2 px-3 border-b border-slate-800">#</th>
+                                        <th class="py-2 px-3 border-b border-slate-800">Type</th>
+                                        <th class="py-2 px-3 border-b border-slate-800">GPS時刻 (UTC)</th>
+                                        <th class="py-2 px-3 border-b border-slate-800">緯度 (Lat)</th>
+                                        <th class="py-2 px-3 border-b border-slate-800">経度 (Lon)</th>
+                                        <th class="py-2 px-3 border-b border-slate-800">標高 (m)</th>
+                                        <th class="py-2 px-3 border-b border-slate-800">速度 (m/s)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inspectPacketTableBody" class="divide-y divide-slate-800/70 text-slate-300"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- モーダルフッター -->
+            <div class="px-5 py-3 border-t border-slate-800 bg-slate-900/95 flex justify-end shrink-0">
+                <button id="btnCloseInspectorBottom" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- 保存先・ファイル名指定モーダル -->
     <div id="saveModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
@@ -501,7 +645,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1840</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1858</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -547,8 +691,13 @@
             mp4Url: null,
             mp4Duration: 0,
             mp4StartOffset: 0,    // 同期の基準位置となるMP4内の秒数
+            lastGeneratedBlob: null,
+            lastGeneratedName: null,
             selectedDirHandle: null,
             map: null,
+            inspectMap: null,
+            inspectPolyline: null,
+            inspectMarkers: null,
             baseLayers: {},
             currentBaseLayer: null,
             polyline: null,
@@ -621,6 +770,30 @@
             btnPickDirectory: document.getElementById('btnPickDirectory'),
             btnOpenNewTab: document.getElementById('btnOpenNewTab'),
             btnConfirmSaveCamm: document.getElementById('btnConfirmSaveCamm'),
+
+            btnOpenInspector: document.getElementById('btnOpenInspector'),
+            inspectorModal: document.getElementById('inspectorModal'),
+            btnCloseInspector: document.getElementById('btnCloseInspector'),
+            btnCloseInspectorBottom: document.getElementById('btnCloseInspectorBottom'),
+            dropZoneInspectMp4: document.getElementById('dropZoneInspectMp4'),
+            inputInspectMp4: document.getElementById('inputInspectMp4'),
+            inspectFileName: document.getElementById('inspectFileName'),
+            inspectFileMeta: document.getElementById('inspectFileMeta'),
+            btnInspectLastGenerated: document.getElementById('btnInspectLastGenerated'),
+            inspectorResultArea: document.getElementById('inspectorResultArea'),
+            inspectVerdictBanner: document.getElementById('inspectVerdictBanner'),
+            inspectVerdictIcon: document.getElementById('inspectVerdictIcon'),
+            inspectVerdictTitle: document.getElementById('inspectVerdictTitle'),
+            inspectVerdictDesc: document.getElementById('inspectVerdictDesc'),
+            chkCammTrack: document.getElementById('chkCammTrack'),
+            chkHdlrType: document.getElementById('chkHdlrType'),
+            chkGpsPackets: document.getElementById('chkGpsPackets'),
+            chkStandardTags: document.getElementById('chkStandardTags'),
+            inspectCoordRange: document.getElementById('inspectCoordRange'),
+            inspectBoxSummary: document.getElementById('inspectBoxSummary'),
+            inspectTracksList: document.getElementById('inspectTracksList'),
+            inspectPacketTableMeta: document.getElementById('inspectPacketTableMeta'),
+            inspectPacketTableBody: document.getElementById('inspectPacketTableBody'),
 
             btnHelp: document.getElementById('btnHelp'),
             helpModal: document.getElementById('helpModal'),
@@ -1778,6 +1951,345 @@
 
         /**
          * ============================================================================
+         * 5.5 CAMM MP4 バイナリインスペクタ（検証パーサー）
+         * ============================================================================
+         */
+        async function inspectCammMp4File(fileOrBlob, fileName = 'output_camm.mp4') {
+            const buffer = await fileOrBlob.arrayBuffer();
+            const view = new DataView(buffer);
+            const bytes = new Uint8Array(buffer);
+            const topBoxes = parseTopLevelBoxes(buffer);
+
+            const moov = topBoxes.find(b => b.type === 'moov');
+            if (!moov) {
+                throw new Error('moov ボックスが見つかりません。有効な MP4 ファイルではありません。');
+            }
+
+            const tracks = [];
+            const udtaTags = [];
+
+            function readStr(off, len) {
+                let s = '';
+                for (let i = 0; i < len && off + i < bytes.byteLength; i++) {
+                    s += String.fromCharCode(bytes[off + i]);
+                }
+                return s;
+            }
+
+            function parseTrak(trakStart, trakEnd) {
+                const track = {
+                    id: null,
+                    handlerType: null,
+                    handlerName: '',
+                    sampleFormats: [],
+                    sampleSizes: [],
+                    uniformSampleSize: 0,
+                    sampleCount: 0,
+                    chunkOffsets: [],
+                    stscEntries: []
+                };
+
+                function walkTrak(pos, end) {
+                    while (pos + 8 <= end) {
+                        const size = view.getUint32(pos, false);
+                        if (size < 8 || pos + size > end) break;
+                        const type = readStr(pos + 4, 4);
+
+                        if (['mdia', 'minf', 'stbl'].includes(type)) {
+                            walkTrak(pos + 8, pos + size);
+                        } else if (type === 'tkhd') {
+                            const v = view.getUint8(pos + 8);
+                            track.id = v === 1 ? view.getUint32(pos + 28, false) : view.getUint32(pos + 20, false);
+                        } else if (type === 'hdlr') {
+                            track.handlerType = readStr(pos + 16, 4);
+                            let name = '';
+                            for (let i = pos + 32; i < pos + size - 1; i++) {
+                                if (bytes[i] === 0) break;
+                                name += String.fromCharCode(bytes[i]);
+                            }
+                            track.handlerName = name;
+                        } else if (type === 'stsd') {
+                            const entryCount = view.getUint32(pos + 12, false);
+                            let ePos = pos + 16;
+                            for (let i = 0; i < entryCount && ePos + 8 <= pos + size; i++) {
+                                const eSize = view.getUint32(ePos, false);
+                                if (eSize < 8) break;
+                                track.sampleFormats.push(readStr(ePos + 4, 4));
+                                ePos += eSize;
+                            }
+                        } else if (type === 'stsz') {
+                            track.uniformSampleSize = view.getUint32(pos + 12, false);
+                            track.sampleCount = view.getUint32(pos + 16, false);
+                            if (track.uniformSampleSize === 0) {
+                                for (let i = 0; i < track.sampleCount && pos + 20 + i * 4 + 4 <= pos + size; i++) {
+                                    track.sampleSizes.push(view.getUint32(pos + 20 + i * 4, false));
+                                }
+                            }
+                        } else if (type === 'stsc') {
+                            const cnt = view.getUint32(pos + 12, false);
+                            for (let i = 0; i < cnt && pos + 16 + i * 12 + 12 <= pos + size; i++) {
+                                track.stscEntries.push({
+                                    firstChunk: view.getUint32(pos + 16 + i * 12, false),
+                                    samplesPerChunk: view.getUint32(pos + 20 + i * 12, false)
+                                });
+                            }
+                        } else if (type === 'stco') {
+                            const cnt = view.getUint32(pos + 12, false);
+                            for (let i = 0; i < cnt && pos + 16 + i * 4 + 4 <= pos + size; i++) {
+                                track.chunkOffsets.push(view.getUint32(pos + 16 + i * 4, false));
+                            }
+                        } else if (type === 'co64') {
+                            const cnt = view.getUint32(pos + 12, false);
+                            for (let i = 0; i < cnt && pos + 16 + i * 8 + 8 <= pos + size; i++) {
+                                const hi = view.getUint32(pos + 16 + i * 8, false);
+                                const lo = view.getUint32(pos + 20 + i * 8, false);
+                                track.chunkOffsets.push(hi * 4294967296 + lo);
+                            }
+                        }
+                        pos += size;
+                    }
+                }
+
+                walkTrak(trakStart + 8, trakEnd);
+                tracks.push(track);
+            }
+
+            function parseUdta(udtaStart, udtaEnd) {
+                let pos = udtaStart + 8;
+                while (pos + 8 <= udtaEnd) {
+                    const size = view.getUint32(pos, false);
+                    if (size < 8 || pos + size > udtaEnd) break;
+                    const b0 = bytes[pos + 4];
+                    const b1 = bytes[pos + 5];
+                    const b2 = bytes[pos + 6];
+                    const b3 = bytes[pos + 7];
+                    if (b0 === 0xa9 && b1 === 0x78 && b2 === 0x79 && b3 === 0x7a) {
+                        const strLen = view.getUint16(pos + 8, false);
+                        const coordStr = readStr(pos + 12, Math.min(strLen, size - 12));
+                        udtaTags.push(`©xyz (${coordStr})`);
+                    } else {
+                        const tag = readStr(pos + 4, 4);
+                        if (tag === 'loci') udtaTags.push('loci (3GPP Location)');
+                        if (tag === 'meta') udtaTags.push('meta/ilst');
+                    }
+                    pos += size;
+                }
+            }
+
+            // moov 走査
+            let mPos = moov.offset + 8;
+            const mEnd = moov.offset + moov.size;
+            while (mPos + 8 <= mEnd) {
+                const size = view.getUint32(mPos, false);
+                if (size < 8 || mPos + size > mEnd) break;
+                const type = readStr(mPos + 4, 4);
+                if (type === 'trak') parseTrak(mPos, mPos + size);
+                if (type === 'udta') parseUdta(mPos, mPos + size);
+                mPos += size;
+            }
+
+            const cammTrack = tracks.find(t => t.sampleFormats.includes('camm'));
+            const decodedPackets = [];
+
+            if (cammTrack && cammTrack.chunkOffsets.length > 0 && cammTrack.sampleCount > 0) {
+                // 各サンプルのファイルオフセットを解決してデコード
+                let sampleIdx = 0;
+                for (let cIdx = 0; cIdx < cammTrack.chunkOffsets.length && sampleIdx < cammTrack.sampleCount; cIdx++) {
+                    const chunkNum = cIdx + 1;
+                    let samplesInThisChunk = 1;
+                    for (let e = 0; e < cammTrack.stscEntries.length; e++) {
+                        if (chunkNum >= cammTrack.stscEntries[e].firstChunk) {
+                            samplesInThisChunk = cammTrack.stscEntries[e].samplesPerChunk;
+                        }
+                    }
+
+                    let offset = cammTrack.chunkOffsets[cIdx];
+                    for (let s = 0; s < samplesInThisChunk && sampleIdx < cammTrack.sampleCount; s++) {
+                        const sSize = cammTrack.uniformSampleSize > 0
+                            ? cammTrack.uniformSampleSize
+                            : (cammTrack.sampleSizes[sampleIdx] || 0);
+
+                        if (sSize >= 4 && offset + sSize <= buffer.byteLength) {
+                            const pktType = view.getUint16(offset + 2, true);
+                            if (pktType === 6 && sSize >= 60) {
+                                const gpsTimeSec = view.getFloat64(offset + 4, true);
+                                const fixType = view.getInt32(offset + 12, true);
+                                const lat = view.getFloat64(offset + 16, true);
+                                const lon = view.getFloat64(offset + 24, true);
+                                const ele = view.getFloat32(offset + 32, true);
+                                const ve = view.getFloat32(offset + 44, true);
+                                const vn = view.getFloat32(offset + 48, true);
+                                const vu = view.getFloat32(offset + 52, true);
+                                const speed = Math.hypot(ve, vn, vu);
+
+                                const unixMs = GPS_EPOCH_UNIX_MS + (gpsTimeSec - GPS_LEAP_SECONDS) * 1000;
+                                const dateObj = isFinite(unixMs) ? new Date(unixMs) : null;
+
+                                if (isFinite(lat) && isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+                                    decodedPackets.push({
+                                        index: sampleIdx + 1,
+                                        type: pktType,
+                                        fixType,
+                                        timeStr: dateObj && !isNaN(dateObj.getTime())
+                                            ? dateObj.toISOString().replace('T', ' ').substring(0, 19)
+                                            : `${gpsTimeSec.toFixed(1)}s`,
+                                        lat,
+                                        lon,
+                                        ele,
+                                        speed
+                                    });
+                                }
+                            } else {
+                                decodedPackets.push({
+                                    index: sampleIdx + 1,
+                                    type: pktType,
+                                    fixType: 0,
+                                    timeStr: '--',
+                                    lat: null,
+                                    lon: null,
+                                    ele: 0,
+                                    speed: 0
+                                });
+                            }
+                        }
+                        offset += sSize;
+                        sampleIdx++;
+                    }
+                }
+            }
+
+            renderInspectorResults({
+                fileName,
+                fileSize: buffer.byteLength,
+                topBoxes,
+                tracks,
+                cammTrack,
+                udtaTags,
+                decodedPackets
+            });
+        }
+
+        function renderInspectorResults(res) {
+            el.inspectorResultArea.classList.remove('hidden');
+            el.inspectFileName.textContent = res.fileName;
+            el.inspectFileMeta.textContent = `${(res.fileSize / (1024 * 1024)).toFixed(2)} MB • ${res.topBoxes.length} トップレベルボックス検出`;
+
+            const gpsPackets = res.decodedPackets.filter(p => p.type === 6 && p.lat !== null);
+            const hasCamm = Boolean(res.cammTrack);
+            const isValidHdlr = hasCamm && (res.cammTrack.handlerType === 'meta' || res.cammTrack.handlerType === 'camm');
+
+            // 総合判定バナー
+            if (hasCamm && isValidHdlr && gpsPackets.length > 0) {
+                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-emerald-950/60 border-emerald-500/40 text-emerald-100 flex items-start gap-3';
+                el.inspectVerdictIcon.setAttribute('data-lucide', 'check-circle-2');
+                el.inspectVerdictIcon.className = 'w-5 h-5 shrink-0 mt-0.5 text-emerald-400';
+                el.inspectVerdictTitle.textContent = '合格: Google CAMM 仕様の MP4 として正しく構成されています';
+                el.inspectVerdictDesc.textContent = `Timed Metadata トラック (hdlr='${res.cammTrack.handlerType}', format='camm') と ${gpsPackets.length} 個の有効な Type 6 GPS バイナリパケットを正常にデコードしました。`;
+            } else if (hasCamm) {
+                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-amber-950/60 border-amber-500/40 text-amber-100 flex items-start gap-3';
+                el.inspectVerdictIcon.setAttribute('data-lucide', 'alert-triangle');
+                el.inspectVerdictIcon.className = 'w-5 h-5 shrink-0 mt-0.5 text-amber-400';
+                el.inspectVerdictTitle.textContent = '注意: camm トラックは存在しますが GPS パケットが読み取れません';
+                el.inspectVerdictDesc.textContent = 'camm トラックは検出されましたが、Type 6 GPS パケットが含まれていないか、チャンクオフセットが一致していません。';
+            } else {
+                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-rose-950/60 border-rose-500/40 text-rose-100 flex items-start gap-3';
+                el.inspectVerdictIcon.setAttribute('data-lucide', 'x-circle');
+                el.inspectVerdictIcon.className = 'w-5 h-5 shrink-0 mt-0.5 text-rose-400';
+                el.inspectVerdictTitle.textContent = '未検出: Google CAMM トラックが含まれていません';
+                el.inspectVerdictDesc.textContent = 'この MP4 ファイル内に stsd="camm" を持つメタデータトラックが見つかりませんでした。';
+            }
+            lucide.createIcons({ root: el.inspectVerdictBanner });
+
+            // 4項目カード
+            el.chkCammTrack.textContent = hasCamm ? `OK (Track #${res.cammTrack.id})` : '未検出';
+            el.chkCammTrack.className = `font-mono text-sm font-bold mt-1 ${hasCamm ? 'text-emerald-400' : 'text-rose-400'}`;
+
+            el.chkHdlrType.textContent = hasCamm ? `'${res.cammTrack.handlerType}'` : '--';
+            el.chkHdlrType.className = `font-mono text-sm font-bold mt-1 ${isValidHdlr ? 'text-emerald-400' : 'text-amber-400'}`;
+
+            el.chkGpsPackets.textContent = `${gpsPackets.length} 件`;
+            el.chkGpsPackets.className = `font-mono text-sm font-bold mt-1 ${gpsPackets.length > 0 ? 'text-sky-300' : 'text-slate-400'}`;
+
+            el.chkStandardTags.textContent = res.udtaTags.length > 0 ? `${res.udtaTags.length} 種検出` : 'なし';
+            el.chkStandardTags.className = `font-mono text-sm font-bold mt-1 ${res.udtaTags.length > 0 ? 'text-emerald-400' : 'text-slate-400'}`;
+
+            // トラック＆ボックス一覧
+            el.inspectBoxSummary.textContent = res.topBoxes.map(b => b.type).join(' → ');
+            el.inspectTracksList.innerHTML = res.tracks.map(t => {
+                const isCamm = t.sampleFormats.includes('camm');
+                return `
+                    <div class="p-2.5 rounded-lg border ${isCamm ? 'bg-emerald-950/30 border-emerald-500/40' : 'bg-slate-900 border-slate-800'}">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold ${isCamm ? 'text-emerald-300' : 'text-slate-200'}">Track #${t.id} [${t.sampleFormats.join(', ') || 'unknown'}]</span>
+                            <span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">hdlr: '${t.handlerType}'</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-1">
+                            サンプル数: ${t.sampleCount} • チャンク数: ${t.chunkOffsets.length} • ${t.handlerName || '名称なし'}
+                        </div>
+                    </div>
+                `;
+            }).join('') + (res.udtaTags.length ? `
+                <div class="p-2.5 rounded-lg border bg-slate-900 border-slate-800 text-[11px] text-sky-300">
+                    udta メタデータ: ${res.udtaTags.join(' / ')}
+                </div>
+            ` : '');
+
+            // パケットテーブル（最大100件抜粋表示）
+            const step = Math.max(1, Math.floor(gpsPackets.length / 100));
+            const rows = [];
+            for (let i = 0; i < gpsPackets.length; i += step) {
+                const p = gpsPackets[i];
+                rows.push(`
+                    <tr class="hover:bg-slate-900/70">
+                        <td class="py-1.5 px-3 text-slate-400">#${p.index}</td>
+                        <td class="py-1.5 px-3 text-sky-300">Type ${p.type}</td>
+                        <td class="py-1.5 px-3">${p.timeStr}</td>
+                        <td class="py-1.5 px-3 text-emerald-300">${p.lat.toFixed(6)}</td>
+                        <td class="py-1.5 px-3 text-emerald-300">${p.lon.toFixed(6)}</td>
+                        <td class="py-1.5 px-3">${p.ele.toFixed(1)}</td>
+                        <td class="py-1.5 px-3">${p.speed.toFixed(2)}</td>
+                    </tr>
+                `);
+            }
+            el.inspectPacketTableBody.innerHTML = rows.length
+                ? rows.join('')
+                : `<tr><td colspan="7" class="py-4 px-3 text-center text-slate-500">デコード可能な Type 6 GPS パケットがありません</td></tr>`;
+            el.inspectPacketTableMeta.textContent = `全 ${gpsPackets.length} パケット中 ${rows.length} 件表示`;
+
+            // 検証用地図の初期化と描画
+            setTimeout(() => {
+                if (!state.inspectMap) {
+                    state.inspectMap = L.map('inspectMap', { zoomControl: true }).setView([35.681236, 139.767125], 13);
+                    L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+                        attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>',
+                        maxZoom: 18
+                    }).addTo(state.inspectMap);
+                }
+                state.inspectMap.invalidateSize();
+
+                if (state.inspectPolyline) state.inspectMap.removeLayer(state.inspectPolyline);
+                if (state.inspectMarkers) state.inspectMap.removeLayer(state.inspectMarkers);
+
+                if (gpsPackets.length > 0) {
+                    const latlngs = gpsPackets.map(p => [p.lat, p.lon]);
+                    state.inspectPolyline = L.polyline(latlngs, { color: '#38bdf8', weight: 5, opacity: 0.9 }).addTo(state.inspectMap);
+                    const startPt = latlngs[0];
+                    const endPt = latlngs[latlngs.length - 1];
+                    state.inspectMarkers = L.layerGroup([
+                        L.circleMarker(startPt, { radius: 6, color: '#fff', fillColor: '#10b981', fillOpacity: 1, weight: 2 }).bindTooltip('開始地点'),
+                        L.circleMarker(endPt, { radius: 6, color: '#fff', fillColor: '#f43f5e', fillOpacity: 1, weight: 2 }).bindTooltip('終了地点')
+                    ]).addTo(state.inspectMap);
+
+                    state.inspectMap.fitBounds(state.inspectPolyline.getBounds(), { padding: [30, 30] });
+                    el.inspectCoordRange.textContent = `${startPt[0].toFixed(5)}, ${startPt[1].toFixed(5)} → ${endPt[0].toFixed(5)}, ${endPt[1].toFixed(5)}`;
+                } else {
+                    el.inspectCoordRange.textContent = '座標データなし';
+                }
+            }, 60);
+        }
+
+        /**
+         * ============================================================================
          * 6. UIイベントバインディング
          * ============================================================================
          */
@@ -2028,6 +2540,10 @@
                         el.progressBar.style.width = `${pct}%`;
                     });
 
+                    state.lastGeneratedBlob = outBlob;
+                    state.lastGeneratedName = finalFileName;
+                    el.btnInspectLastGenerated.classList.remove('hidden');
+
                     if (state.selectedDirHandle) {
                         // 1. 事前選択されたフォルダハンドルへ直接書き込み
                         el.progressStatus.textContent = `フォルダ「${state.selectedDirHandle.name}」へ書き込み中...`;
@@ -2075,26 +2591,58 @@
             el.helpModal.addEventListener('click', (e) => {
                 if (e.target === el.helpModal) el.helpModal.classList.add('hidden');
             });
-        }
 
-        function setupDragAndDrop(zoneEl, onFileCallback) {
-            ['dragenter', 'dragover'].forEach(evtName => {
-                zoneEl.addEventListener(evtName, (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    zoneEl.classList.add('border-sky-400', 'bg-slate-800/80');
-                });
+            // CAMM 検証ビューワー（インスペクタ）モーダル開閉＆操作
+            const openInspector = () => {
+                el.inspectorModal.classList.remove('hidden');
+                if (state.lastGeneratedBlob) {
+                    el.btnInspectLastGenerated.classList.remove('hidden');
+                }
+                if (state.inspectMap) {
+                    setTimeout(() => state.inspectMap.invalidateSize(), 60);
+                }
+            };
+            const closeInspector = () => el.inspectorModal.classList.add('hidden');
+
+            el.btnOpenInspector.addEventListener('click', openInspector);
+            el.btnCloseInspector.addEventListener('click', closeInspector);
+            el.btnCloseInspectorBottom.addEventListener('click', closeInspector);
+            el.inspectorModal.addEventListener('click', (e) => {
+                if (e.target === el.inspectorModal) closeInspector();
             });
-            ['dragleave', 'drop'].forEach(evtName => {
-                zoneEl.addEventListener(evtName, (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    zoneEl.classList.remove('border-sky-400', 'bg-slate-800/80');
-                });
+
+            el.inputInspectMp4.addEventListener('click', (e) => e.stopPropagation());
+            el.dropZoneInspectMp4.addEventListener('click', () => {
+                el.inputInspectMp4.value = '';
+                el.inputInspectMp4.click();
             });
-            zoneEl.addEventListener('drop', (e) => {
-                const file = e.dataTransfer.files && e.dataTransfer.files[0];
-                if (file) onFileCallback(file);
+            el.inputInspectMp4.addEventListener('change', async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                try {
+                    await inspectCammMp4File(file, file.name);
+                    showToast(`「${file.name}」のCAMM構造を解析しました`, 'success');
+                } catch (err) {
+                    showToast(err.message || 'MP4の検証解析に失敗しました', 'error');
+                }
+            });
+            setupDragAndDrop(el.dropZoneInspectMp4, async (file) => {
+                try {
+                    await inspectCammMp4File(file, file.name);
+                    showToast(`「${file.name}」のCAMM構造を解析しました`, 'success');
+                } catch (err) {
+                    showToast(err.message || 'MP4の検証解析に失敗しました', 'error');
+                }
+            });
+
+            el.btnInspectLastGenerated.addEventListener('click', async () => {
+                if (!state.lastGeneratedBlob) return;
+                try {
+                    await inspectCammMp4File(state.lastGeneratedBlob, state.lastGeneratedName || 'output_camm.mp4');
+                    showToast('直前に生成した CAMM MP4 の検証を完了しました', 'success');
+                } catch (err) {
+                    showToast(err.message || '検証解析に失敗しました', 'error');
+                }
             });
         }
 
