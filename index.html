@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1542</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1548</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -404,8 +404,8 @@
                 <!-- 生成実行ボタンエリア -->
                 <div class="flex flex-col items-stretch sm:items-end justify-center gap-3 shrink-0 lg:w-72">
                     <button id="btnGenerateCamm" disabled class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-bold text-sm shadow-lg shadow-sky-500/20 disabled:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed">
-                        <i data-lucide="cpu" class="w-5 h-5"></i>
-                        <span>CAMM MP4 を生成・ダウンロード</span>
+                        <i data-lucide="folder-output" class="w-5 h-5"></i>
+                        <span>保存先を指定して CAMM 出力</span>
                     </button>
 
                     <!-- プログレスバー -->
@@ -420,7 +420,7 @@
                     </div>
 
                     <p class="text-[11px] text-slate-500 text-center sm:text-right">
-                        ※ 処理はすべてブラウザ内で完結し、サーバーへ動画は送信されません。
+                        ※ 処理はすべてブラウザ内で完結し、保存ダイアログから任意のフォルダへ直接出力できます。
                     </p>
                 </div>
             </div>
@@ -435,7 +435,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1542</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1548</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1866,9 +1866,35 @@ ${trkptsXml}    </trkseg>
             // 補間オプション変更時
             el.chkInterpolate.addEventListener('change', updateSummaryMetrics);
 
-            // CAMM MP4 生成＆ダウンロード実行
+            // CAMM MP4 生成＆保存先指定出力実行
             el.btnGenerateCamm.addEventListener('click', async () => {
                 if (!state.mp4File || state.gpxPoints.length === 0) return;
+
+                const baseName = state.mp4File.name.replace(/\.mp4$/i, '');
+                const defaultFileName = `${baseName}_camm.mp4`;
+                let fileHandle = null;
+
+                // 1. ユーザークリック直後に保存先指定ダイアログを開く (File System Access API)
+                if (typeof window.showSaveFilePicker === 'function') {
+                    try {
+                        fileHandle = await window.showSaveFilePicker({
+                            suggestedName: defaultFileName,
+                            types: [{
+                                description: 'CAMM MP4 Video (*.mp4)',
+                                accept: { 'video/mp4': ['.mp4'] }
+                            }]
+                        });
+                    } catch (pickerErr) {
+                        // ユーザーがキャンセルした場合は処理を中断
+                        if (pickerErr.name === 'AbortError') {
+                            showToast('出力がキャンセルされました', 'info');
+                            return;
+                        }
+                        // iFrame制限等によるSecurityError時は標準ダウンロードへ自動フォールバック
+                        console.warn('showSaveFilePicker fallback to download:', pickerErr);
+                        fileHandle = null;
+                    }
+                }
 
                 try {
                     el.btnGenerateCamm.disabled = true;
@@ -1885,20 +1911,26 @@ ${trkptsXml}    </trkseg>
                         el.progressBar.style.width = `${pct}%`;
                     });
 
-                    // ファイルダウンロード発火
-                    const baseName = state.mp4File.name.replace(/\.mp4$/i, '');
-                    const outFileName = `${baseName}_camm.mp4`;
-                    const downloadUrl = URL.createObjectURL(outBlob);
+                    if (fileHandle) {
+                        // 指定された保存先ファイルハンドルへ直接書き込み
+                        el.progressStatus.textContent = '指定された保存先へ書き込み中...';
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(outBlob);
+                        await writable.close();
+                        showToast(`CAMM形式MP4を「${fileHandle.name}」に保存しました！`, 'success');
+                    } else {
+                        // フォールバック: ブラウザ標準ダウンロード発火
+                        const downloadUrl = URL.createObjectURL(outBlob);
+                        const a = document.createElement('a');
+                        a.href = downloadUrl;
+                        a.download = defaultFileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
 
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = outFileName;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-
-                    setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
-                    showToast(`CAMM形式MP4「${outFileName}」の生成・ダウンロードが完了しました！`, 'success');
+                        setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
+                        showToast(`CAMM形式MP4「${defaultFileName}」のダウンロードを開始しました（ブラウザの保存先設定に従います）`, 'success');
+                    }
                 } catch (err) {
                     console.error(err);
                     showToast(err.message || 'CAMM MP4の生成中にエラーが発生しました', 'error');
