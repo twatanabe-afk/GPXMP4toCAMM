@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1836</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1840</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -501,247 +501,168 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1836</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1840</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
             </div>
-            // 3. hdlr (Handler Reference Box - Google CAMM 正式仕様: handler_type = 'meta')
-            const hdlrFixed = new Uint8Array(20);
-            hdlrFixed.set(B.strToBytes('meta'), 4); // handler_type = 'meta' (Timed Metadata Track)
-            const hdlrName = B.strToBytes('Camera Motion Metadata\0');
-            const hdlr = B.fullBox('hdlr', 0, 0, hdlrFixed, hdlrName);
+            <div class="text-xs sm:text-sm text-slate-300 space-y-3 leading-relaxed max-h-[60vh] overflow-y-auto pr-1">
+                <p>
+                    このアプリは、<strong>GPXファイル（GPS軌跡）</strong>と<strong>MP4動画ファイル</strong>をブラウザ上だけで解析・同期し、Googleの<strong>CAMM (Camera Motion Metadata)</strong> 仕様および標準MP4 GPSメタデータ（<code>©xyz</code> / <code>loci</code>）を埋め込んだMP4ファイルを生成します。
+                </p>
+                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
+                    <h4 class="font-semibold text-sky-400">基準位置の同期方法</h4>
+                    <ol class="list-decimal list-inside space-y-1 text-slate-400">
+                        <li>GPXファイル（<code>.gpx</code>）とMP4ファイルを読み込みます。</li>
+                        <li>地図上の赤いマーカーをドラッグ（または軌跡をクリック）して、基準となる地点を指定します。</li>
+                        <li>右側の動画プレイヤーで、その地点を通過するフレームへ移動し「現在位置を基準に設定」を押します。</li>
+                        <li>「保存先を指定して CAMM 出力」をクリックすると、基準位置を中心に前後全編のGPSメタデータが連結されたMP4が出力されます。</li>
+                    </ol>
+                </div>
+                <p class="text-xs text-slate-400">
+                    ※ 動画の映像データ自体は再エンコードせず無劣化のままコピーし、メタデータトラックおよびGPSタグのみを追加するため高速に処理されます。
+                </p>
+            </div>
+            <div class="flex justify-end pt-2 border-t border-slate-800">
+                <button id="btnCloseHelpBottom" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
 
-            // 4. minf -> nmhd + dinf(dref) + stbl
-            const nmhd = B.fullBox('nmhd', 0, 0);
-            const urlBox = B.fullBox('url ', 0, 0x000001); // self-contained flag
-            const dref = B.fullBox('dref', 0, 0, B.u32(1), urlBox);
-            const dinf = B.box('dinf', dref);
+    <script>
+        // Lucideアイコン初期化
+        lucide.createIcons();
 
-            // 5. stsd (Sample Description Box with 'camm' SampleEntry)
-            // Google CAMM 仕様準拠: 8バイト標準SampleEntryヘッダ (reserved[6] + data_reference_index[2])
-            const cammEntryHeader = new Uint8Array(8);
-            new DataView(cammEntryHeader.buffer).setUint16(6, 1, false); // data_reference_index = 1
-            const cammEntry = B.box('camm', cammEntryHeader);
-            const stsd = B.fullBox('stsd', 0, 0, B.u32(1), cammEntry);
+        /**
+         * アプリケーション全体の状態管理
+         */
+        const state = {
+            gpxFile: null,
+            gpxPoints: [],        // { lat, lon, ele, time: Date|null, elapsedSec: number }
+            gpxStartIndex: 0,     // 同期の基準位置となるGPXポイントのインデックス
+            mp4File: null,
+            mp4Url: null,
+            mp4Duration: 0,
+            mp4StartOffset: 0,    // 同期の基準位置となるMP4内の秒数
+            selectedDirHandle: null,
+            map: null,
+            baseLayers: {},
+            currentBaseLayer: null,
+            polyline: null,
+            startMarker: null,
+            currentMarker: null,
+            pointLayerGroup: null
+        };
 
-            // 6. stts (Decoding Time to Sample Box) - ランレングス圧縮
-            const sttsEntries = [];
-            for (const s of samples) {
-                const delta = Math.max(1, Math.round(s.durationSec * mediaTimescale));
-                if (sttsEntries.length > 0 && sttsEntries[sttsEntries.length - 1].delta === delta) {
-                    sttsEntries[sttsEntries.length - 1].count++;
-                } else {
-                    sttsEntries.push({ count: 1, delta });
-                }
-            }
-            const sttsBuf = new Uint8Array(4 + sttsEntries.length * 8);
-            const sttsView = new DataView(sttsBuf.buffer);
-            sttsView.setUint32(0, sttsEntries.length, false);
-            sttsEntries.forEach((e, i) => {
-                sttsView.setUint32(4 + i * 8, e.count, false);
-                sttsView.setUint32(8 + i * 8, e.delta, false);
+        /**
+         * DOM要素の参照キャッシュ
+         */
+        const el = {
+            dropZoneGpx: document.getElementById('dropZoneGpx'),
+            inputGpx: document.getElementById('inputGpx'),
+            titleGpx: document.getElementById('titleGpx'),
+            metaGpx: document.getElementById('metaGpx'),
+            badgeGpxStatus: document.getElementById('badgeGpxStatus'),
+
+            dropZoneMp4: document.getElementById('dropZoneMp4'),
+            inputMp4: document.getElementById('inputMp4'),
+            titleMp4: document.getElementById('titleMp4'),
+            metaMp4: document.getElementById('metaMp4'),
+            badgeMp4Status: document.getElementById('badgeMp4Status'),
+
+            mapEmptyOverlay: document.getElementById('mapEmptyOverlay'),
+            mapLegend: document.getElementById('mapLegend'),
+            btnFitMap: document.getElementById('btnFitMap'),
+            selectMapLayer: document.getElementById('selectMapLayer'),
+            sliderGpxStart: document.getElementById('sliderGpxStart'),
+            btnGpxPrev: document.getElementById('btnGpxPrev'),
+            btnGpxNext: document.getElementById('btnGpxNext'),
+            gpxStartPointLabel: document.getElementById('gpxStartPointLabel'),
+            gpxCoordDisplay: document.getElementById('gpxCoordDisplay'),
+            gpxTimeDisplay: document.getElementById('gpxTimeDisplay'),
+            gpxEleDisplay: document.getElementById('gpxEleDisplay'),
+
+            videoPlayer: document.getElementById('videoPlayer'),
+            videoEmptyOverlay: document.getElementById('videoEmptyOverlay'),
+            videoSyncHud: document.getElementById('videoSyncHud'),
+            hudSyncBadge: document.getElementById('hudSyncBadge'),
+            hudCurrentTime: document.getElementById('hudCurrentTime'),
+            videoResolutionBadge: document.getElementById('videoResolutionBadge'),
+            videoCurrentTimeLabel: document.getElementById('videoCurrentTimeLabel'),
+            videoDurationLabel: document.getElementById('videoDurationLabel'),
+            sliderVideoSeek: document.getElementById('sliderVideoSeek'),
+            videoStartMarkerBar: document.getElementById('videoStartMarkerBar'),
+            btnVideoPlayPause: document.getElementById('btnVideoPlayPause'),
+            btnFrameBack: document.getElementById('btnFrameBack'),
+            btnFrameForward: document.getElementById('btnFrameForward'),
+            btnSetVideoStart: document.getElementById('btnSetVideoStart'),
+            videoStartOffsetDisplay: document.getElementById('videoStartOffsetDisplay'),
+            btnJumpToVideoStart: document.getElementById('btnJumpToVideoStart'),
+
+            summaryMp4Start: document.getElementById('summaryMp4Start'),
+            summaryGpxStart: document.getElementById('summaryGpxStart'),
+            summaryMatchedSamples: document.getElementById('summaryMatchedSamples'),
+            chkInterpolate: document.getElementById('chkInterpolate'),
+            btnGenerateCamm: document.getElementById('btnGenerateCamm'),
+            progressContainer: document.getElementById('progressContainer'),
+            progressStatus: document.getElementById('progressStatus'),
+            progressPercent: document.getElementById('progressPercent'),
+            progressBar: document.getElementById('progressBar'),
+
+            saveModal: document.getElementById('saveModal'),
+            btnCloseSaveModal: document.getElementById('btnCloseSaveModal'),
+            btnCancelSaveModal: document.getElementById('btnCancelSaveModal'),
+            inputSaveFileName: document.getElementById('inputSaveFileName'),
+            saveApiStatusBadge: document.getElementById('saveApiStatusBadge'),
+            selectedFolderLabel: document.getElementById('selectedFolderLabel'),
+            btnPickDirectory: document.getElementById('btnPickDirectory'),
+            btnOpenNewTab: document.getElementById('btnOpenNewTab'),
+            btnConfirmSaveCamm: document.getElementById('btnConfirmSaveCamm'),
+
+            btnHelp: document.getElementById('btnHelp'),
+            helpModal: document.getElementById('helpModal'),
+            btnCloseHelp: document.getElementById('btnCloseHelp'),
+            btnCloseHelpBottom: document.getElementById('btnCloseHelpBottom'),
+            toastContainer: document.getElementById('toastContainer')
+        };
+
+        /**
+         * トースト通知表示 (alertの代替)
+         */
+        function showToast(message, type = 'info') {
+            const colors = {
+                info: 'bg-slate-800 border-sky-500/50 text-slate-100',
+                success: 'bg-emerald-950/95 border-emerald-500/60 text-emerald-100',
+                error: 'bg-rose-950/95 border-rose-500/60 text-rose-100',
+                warning: 'bg-amber-950/95 border-amber-500/60 text-amber-100'
+            };
+            const iconNames = {
+                info: 'info',
+                success: 'check-circle-2',
+                error: 'alert-circle',
+                warning: 'alert-triangle'
+            };
+
+            const toast = document.createElement('div');
+            toast.className = `pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md text-xs sm:text-sm transition-all duration-300 transform translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+            toast.innerHTML = `
+                <i data-lucide="${iconNames[type] || 'info'}" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                <div class="flex-1 leading-snug">${message}</div>
+            `;
+            el.toastContainer.appendChild(toast);
+            lucide.createIcons({ root: toast });
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
             });
-            const stts = B.fullBox('stts', 0, 0, sttsBuf);
 
-            // 7. stsc (Sample To Chunk Box) - 全サンプルを1つの連続チャンクとして格納（ExifTool/StreetView標準形式）
-            const stscBuf = new Uint8Array(16);
-            const stscView = new DataView(stscBuf.buffer);
-            stscView.setUint32(0, 1, false);              // entry_count = 1
-            stscView.setUint32(4, 1, false);              // first_chunk = 1
-            stscView.setUint32(8, samples.length, false); // samples_per_chunk = all samples
-            stscView.setUint32(12, 1, false);             // sample_description_index = 1
-            const stsc = B.fullBox('stsc', 0, 0, stscBuf);
-
-            // 8. stsz (Sample Size Box) - 各サンプル固定60バイト
-            const stszBuf = new Uint8Array(8);
-            const stszView = new DataView(stszBuf.buffer);
-            stszView.setUint32(0, 60, false);             // sample_size = 60 (uniform)
-            stszView.setUint32(4, samples.length, false); // sample_count
-            const stsz = B.fullBox('stsz', 0, 0, stszBuf);
-
-            // 9. stco / co64 (Chunk Offset Box) - 連続チャンクの先頭ファイルオフセットを記録
-            let stco;
-            if (cammDataStartOffset <= 0xffffffff) {
-                const stcoBuf = new Uint8Array(8);
-                const stcoView = new DataView(stcoBuf.buffer);
-                stcoView.setUint32(0, 1, false);                          // entry_count = 1
-                stcoView.setUint32(4, cammDataStartOffset >>> 0, false);  // chunk_offset
-                stco = B.fullBox('stco', 0, 0, stcoBuf);
-            } else {
-                const co64Buf = new Uint8Array(12);
-                const co64View = new DataView(co64Buf.buffer);
-                co64View.setUint32(0, 1, false); // entry_count = 1
-                co64View.setUint32(4, Math.floor(cammDataStartOffset / 4294967296), false);
-                co64View.setUint32(8, cammDataStartOffset >>> 0, false);
-                stco = B.fullBox('co64', 0, 0, co64Buf);
-            }
-
-            const stbl = B.box('stbl', stsd, stts, stsc, stsz, stco);
-            const minf = B.box('minf', nmhd, dinf, stbl);
-            const mdia = B.box('mdia', mdhd, hdlr, minf);
-            return B.box('trak', tkhd, edts, mdia);
-        }
-
-        /**
-         * 標準MP4 / QuickTime / 3GPP 互換のGPSメタデータボックス ('udta') を構築
-         * 1) QuickTime/MP4 標準 '©xyz' (udta直下 および meta/ilst 内)
-         * 2) 3GPP TS 26.244 標準 'loci' (Location Information Box)
-         * により、ExifTool / FFprobe / Windows・Mac・Android・各種ビューアで確実にGPS座標を認識させる
-         */
-        function buildStandardGpsUdtaBox(anchorSample) {
-            const B = Mp4BoxBuilder;
-            const lat = anchorSample.lat;
-            const lon = anchorSample.lon;
-            const ele = anchorSample.ele || 0;
-
-            const latSign = lat >= 0 ? '+' : '-';
-            const lonSign = lon >= 0 ? '+' : '-';
-            const eleSign = ele >= 0 ? '+' : '-';
-
-            const latStr = latSign + Math.abs(lat).toFixed(6).padStart(9, '0');
-            const lonStr = lonSign + Math.abs(lon).toFixed(6).padStart(10, '0');
-            const eleStr = eleSign + Math.abs(ele).toFixed(2);
-            const iso6709 = `${latStr}${lonStr}${eleStr}/`;
-            const strBytes = B.strToBytes(iso6709);
-
-            // (A) QuickTime / MP4 ©xyz box (udta直下)
-            const xyzPayload = new Uint8Array(4 + strBytes.byteLength);
-            const xyzView = new DataView(xyzPayload.buffer);
-            xyzView.setUint16(0, strBytes.byteLength, false);
-            xyzView.setUint16(2, 0x55c4, false); // 'und'
-            xyzPayload.set(strBytes, 4);
-
-            const xyzSize = 8 + xyzPayload.byteLength;
-            const xyzBox = new Uint8Array(xyzSize);
-            new DataView(xyzBox.buffer).setUint32(0, xyzSize, false);
-            xyzBox[4] = 0xa9;
-            xyzBox[5] = 0x78;
-            xyzBox[6] = 0x79;
-            xyzBox[7] = 0x7a;
-            xyzBox.set(xyzPayload, 8);
-
-            // (B) 3GPP 'loci' (Location Information Box - FullBox v0)
-            // [version/flags 4B][pad/lang 2B][name '\0' 1B][role 1B][longitude 4B fixed16.16][latitude 4B fixed16.16][altitude 4B fixed16.16][astronomical_body '\0' 1B][additional_notes '\0' 1B]
-            const lociBody = new Uint8Array(18);
-            const lociView = new DataView(lociBody.buffer);
-            lociView.setUint16(0, 0x55c4, false); // language 'und'
-            lociBody[2] = 0; // name = ""
-            lociBody[3] = 0; // role = 0 (shooting location)
-            lociView.setInt32(4, Math.round(lon * 65536), false); // longitude (fixed-point 16.16)
-            lociView.setInt32(8, Math.round(lat * 65536), false); // latitude (fixed-point 16.16)
-            lociView.setInt32(12, Math.round(ele * 65536), false); // altitude (fixed-point 16.16)
-            lociBody[16] = 0; // astronomical_body = ""
-            lociBody[17] = 0; // additional_notes = ""
-            const lociBox = B.fullBox('loci', 0, 0, lociBody);
-
-            // (C) iTunes/MP4 'meta' -> 'hdlr'(mdir) + 'ilst' -> '©xyz' -> 'data'(UTF-8)
-            const metaHdlrFixed = new Uint8Array(20);
-            metaHdlrFixed.set(B.strToBytes('mdir'), 4);
-            metaHdlrFixed.set(B.strToBytes('appl'), 8);
-            const metaHdlr = B.fullBox('hdlr', 0, 0, metaHdlrFixed, new Uint8Array([0]));
-
-            const dataBox = B.fullBox('data', 0, 1, B.u32(0), strBytes); // type=1 (UTF-8)
-            const ilstItemSize = 8 + dataBox.byteLength;
-            const ilstItem = new Uint8Array(ilstItemSize);
-            new DataView(ilstItem.buffer).setUint32(0, ilstItemSize, false);
-            ilstItem[4] = 0xa9;
-            ilstItem[5] = 0x78;
-            ilstItem[6] = 0x79;
-            ilstItem[7] = 0x7a;
-            ilstItem.set(dataBox, 8);
-
-            const ilstBox = B.box('ilst', ilstItem);
-            const metaBox = B.fullBox('meta', 0, 0, metaHdlr, ilstBox);
-
-            return B.box('udta', xyzBox, lociBox, metaBox);
-        }
-
-        /**
-         * MP4ファイルを読み込み、CAMMメタデータトラックを注入して新しいBlobを返す
-         */
-        async function generateCammMp4Blob(mp4File, samples, onProgress) {
-            onProgress('MP4コンテナをメモリに読み込み中...', 15);
-            const arrayBuffer = await mp4File.arrayBuffer();
-            const rawBytes = new Uint8Array(arrayBuffer);
-
-            onProgress('ISO BMFF ボックス構造を解析中...', 35);
-            const topBoxes = parseTopLevelBoxes(arrayBuffer);
-            const moovBox = topBoxes.find(b => b.type === 'moov');
-            if (!moovBox) {
-                throw new Error('有効なMP4ファイルではありません (moovボックスが見つかりません)。');
-            }
-
-            onProgress(`${samples.length} 個のCAMM Type 6パケットをエンコード中...`, 55);
-            const cammPackets = samples.map(s => encodeCammType6Packet(s));
-            const cammPayload = Mp4BoxBuilder.concat(cammPackets);
-            // CAMMデータを格納する新規 mdat ボックス (8バイトヘッダ + ペイロード)
-            const cammMdatBox = Mp4BoxBuilder.box('mdat', cammPayload);
-
-            onProgress('トラックテーブルとチャンクオフセットを再計算中...', 75);
-            const origMoovBytes = rawBytes.subarray(moovBox.offset, moovBox.offset + moovBox.size);
-
-            // 基準位置のサンプルから標準GPSタグ(udta: ©xyz + loci + meta/ilst)も構築
-            const anchorSample = samples.find(s => Math.abs(s.videoTime - state.mp4StartOffset) < 0.2) || samples[0];
-            const gpsUdtaBox = buildStandardGpsUdtaBox(anchorSample);
-
-            // まずダミーオフセットで trak + udta ボックスのサイズを確定させる
-            const { patchedMoov: tempMoov, newTrackId, movieTimescale } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, 0);
-            const dummyTrak = buildCammTrakBox(newTrackId, samples, 0, movieTimescale);
-            const newMoovSize = tempMoov.byteLength + dummyTrak.byteLength + gpsUdtaBox.byteLength;
-            const moovSizeDelta = newMoovSize - moovBox.size;
-
-            // moov が mdat より前に配置されている場合、既存メディアの stco/co64 を moovSizeDelta 分だけシフトする
-            const mdatBeforeMoov = topBoxes.some(b => b.type === 'mdat' && b.offset < moovBox.offset);
-            const mediaOffsetShift = mdatBeforeMoov ? 0 : moovSizeDelta;
-
-            const { patchedMoov } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, mediaOffsetShift);
-
-            // 最終ファイル構成: [moov以外の全ボックス(拡張されたmoov含む)] + [新規 cammMdatBox]
-            // そのため cammMdatBox のデータ開始位置は (元のファイル総サイズ + moovSizeDelta + 8)
-            const cammMdatDataOffset = rawBytes.byteLength + moovSizeDelta + 8;
-            const finalCammTrak = buildCammTrakBox(newTrackId, samples, cammMdatDataOffset, movieTimescale);
-
-            // 拡張された moov ボックスの組み立て
-            const newMoovBody = Mp4BoxBuilder.concat([
-                patchedMoov.subarray(8),
-                finalCammTrak,
-                gpsUdtaBox
-            ]);
-            const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
-
-            onProgress('新しいMP4バイナリを結合中...', 90);
-            const outputChunks = [];
-            for (const box of topBoxes) {
-                if (box.type === 'moov') {
-                    outputChunks.push(finalMoovBox);
-                } else if (box.type === 'mdat' && box.isZeroLength) {
-                    // size=0 (ファイル末尾まで) の mdat に後続ボックスを追加する場合、明示的サイズへ書き換える
-                    const fixedMdat = new Uint8Array(rawBytes.subarray(box.offset, box.offset + box.size));
-                    new DataView(fixedMdat.buffer, fixedMdat.byteOffset, 4).setUint32(0, box.size, false);
-                    outputChunks.push(fixedMdat);
-                } else {
-                    outputChunks.push(rawBytes.subarray(box.offset, box.offset + box.size));
-                }
-            }
-            outputChunks.push(cammMdatBox);
-
-            onProgress('書き込み完了・メタデータ検証中...', 98);
-            const outBlob = new Blob(outputChunks, { type: 'video/mp4' });
-
-            // 出力バイナリの自己検証（CAMMパケットが正しく読み出せるか確認）
-            const verifyBuf = await outBlob.slice(cammMdatDataOffset, cammMdatDataOffset + 60).arrayBuffer();
-            const verifyView = new DataView(verifyBuf);
-            const packetType = verifyView.getUint16(2, true);
-            const verifyLat = verifyView.getFloat64(16, true);
-            const verifyLon = verifyView.getFloat64(24, true);
-            if (packetType !== 6 || !isFinite(verifyLat) || !isFinite(verifyLon)) {
-                throw new Error('CAMMパケットのバイナリ検証に失敗しました。');
-            }
-
-            onProgress('完了', 100);
-            return outBlob;
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 4200);
         }
 
         /**
@@ -1618,10 +1539,10 @@
             mdhdView.setUint32(12, totalMediaDurationMs, false); // duration
             mdhdView.setUint16(16, 0x55c4, false);               // language ('und')
             const mdhd = B.fullBox('mdhd', 0, 0, mdhdBody);
-            // 3. hdlr (Handler Reference Box - 'camm' / 'Camera Motion Metadata')
-            // Google CAMM / FFmpeg 仕様: handler_type に 'camm' を設定することで CAMM ストリームとして即座に認識される
+
+            // 3. hdlr (Handler Reference Box - Google CAMM 正式仕様: handler_type = 'meta')
             const hdlrFixed = new Uint8Array(20);
-            hdlrFixed.set(B.strToBytes('camm'), 4); // handler_type = 'camm'
+            hdlrFixed.set(B.strToBytes('meta'), 4); // handler_type = 'meta' (Timed Metadata Track)
             const hdlrName = B.strToBytes('Camera Motion Metadata\0');
             const hdlr = B.fullBox('hdlr', 0, 0, hdlrFixed, hdlrName);
 
@@ -1632,8 +1553,8 @@
             const dinf = B.box('dinf', dref);
 
             // 5. stsd (Sample Description Box with 'camm' SampleEntry)
-            // Google CAMM / FFmpeg 仕様準拠: 8バイト標準SampleEntryヘッダ + 8バイト予約領域 (計16バイト)
-            const cammEntryHeader = new Uint8Array(16);
+            // Google CAMM 正式仕様準拠: 8バイト標準SampleEntryヘッダのみ (ボックス全体16バイト)
+            const cammEntryHeader = new Uint8Array(8);
             new DataView(cammEntryHeader.buffer).setUint16(6, 1, false); // data_reference_index = 1
             const cammEntry = B.box('camm', cammEntryHeader);
             const stsd = B.fullBox('stsd', 0, 0, B.u32(1), cammEntry);
@@ -1657,13 +1578,13 @@
             });
             const stts = B.fullBox('stts', 0, 0, sttsBuf);
 
-            // 7. stsc (Sample To Chunk Box) - 1サンプル = 1チャンクとして格納（FFmpeg/ExifTool等の互換性最大化）
+            // 7. stsc (Sample To Chunk Box) - 全サンプルを1つの連続チャンクとして格納（ExifTool/StreetView標準形式）
             const stscBuf = new Uint8Array(16);
             const stscView = new DataView(stscBuf.buffer);
-            stscView.setUint32(0, 1, false);  // entry_count = 1
-            stscView.setUint32(4, 1, false);  // first_chunk = 1
-            stscView.setUint32(8, 1, false);  // samples_per_chunk = 1
-            stscView.setUint32(12, 1, false); // sample_description_index = 1
+            stscView.setUint32(0, 1, false);              // entry_count = 1
+            stscView.setUint32(4, 1, false);              // first_chunk = 1
+            stscView.setUint32(8, samples.length, false); // samples_per_chunk = all samples
+            stscView.setUint32(12, 1, false);             // sample_description_index = 1
             const stsc = B.fullBox('stsc', 0, 0, stscBuf);
 
             // 8. stsz (Sample Size Box) - 各サンプル固定60バイト
@@ -1673,26 +1594,20 @@
             stszView.setUint32(4, samples.length, false); // sample_count
             const stsz = B.fullBox('stsz', 0, 0, stszBuf);
 
-            // 9. stco / co64 (Chunk Offset Box) - 各サンプル(60バイト間隔)の正確なファイルオフセットを記録
-            const maxOffset = cammDataStartOffset + Math.max(0, samples.length - 1) * 60;
+            // 9. stco / co64 (Chunk Offset Box) - 連続チャンクの先頭ファイルオフセットを記録
             let stco;
-            if (maxOffset <= 0xffffffff) {
-                const stcoBuf = new Uint8Array(4 + samples.length * 4);
+            if (cammDataStartOffset <= 0xffffffff) {
+                const stcoBuf = new Uint8Array(8);
                 const stcoView = new DataView(stcoBuf.buffer);
-                stcoView.setUint32(0, samples.length, false); // entry_count
-                for (let i = 0; i < samples.length; i++) {
-                    stcoView.setUint32(4 + i * 4, (cammDataStartOffset + i * 60) >>> 0, false);
-                }
+                stcoView.setUint32(0, 1, false);                          // entry_count = 1
+                stcoView.setUint32(4, cammDataStartOffset >>> 0, false);  // chunk_offset
                 stco = B.fullBox('stco', 0, 0, stcoBuf);
             } else {
-                const co64Buf = new Uint8Array(4 + samples.length * 8);
+                const co64Buf = new Uint8Array(12);
                 const co64View = new DataView(co64Buf.buffer);
-                co64View.setUint32(0, samples.length, false); // entry_count
-                for (let i = 0; i < samples.length; i++) {
-                    const off = cammDataStartOffset + i * 60;
-                    co64View.setUint32(4 + i * 8, Math.floor(off / 4294967296), false);
-                    co64View.setUint32(8 + i * 8, off >>> 0, false);
-                }
+                co64View.setUint32(0, 1, false); // entry_count = 1
+                co64View.setUint32(4, Math.floor(cammDataStartOffset / 4294967296), false);
+                co64View.setUint32(8, cammDataStartOffset >>> 0, false);
                 stco = B.fullBox('co64', 0, 0, co64Buf);
             }
 
@@ -1703,8 +1618,10 @@
         }
 
         /**
-         * 標準MP4/QuickTime互換のGPSメタデータボックス ('udta' 内 '©xyz' ISO 6709 座標) を構築
-         * 汎用プレイヤーやOSプロパティ・FFprobe等でGPS座標が即座に読み取れるようにする
+         * 標準MP4 / QuickTime / 3GPP 互換のGPSメタデータボックス ('udta') を構築
+         * 1) QuickTime/MP4 標準 '©xyz' (udta直下 および meta/ilst 内)
+         * 2) 3GPP TS 26.244 標準 'loci' (Location Information Box)
+         * により、ExifTool / FFprobe / Windows・Mac・Android・各種ビューアで確実にGPS座標を認識させる
          */
         function buildStandardGpsUdtaBox(anchorSample) {
             const B = Mp4BoxBuilder;
@@ -1720,26 +1637,57 @@
             const lonStr = lonSign + Math.abs(lon).toFixed(6).padStart(10, '0');
             const eleStr = eleSign + Math.abs(ele).toFixed(2);
             const iso6709 = `${latStr}${lonStr}${eleStr}/`;
-
             const strBytes = B.strToBytes(iso6709);
-            // QuickTime / MP4 ©xyz payload: [uint16 string_length][uint16 language_code=0x55c4][utf8 string]
+
+            // (A) QuickTime / MP4 ©xyz box (udta直下)
             const xyzPayload = new Uint8Array(4 + strBytes.byteLength);
-            const view = new DataView(xyzPayload.buffer);
-            view.setUint16(0, strBytes.byteLength, false);
-            view.setUint16(2, 0x55c4, false); // 'und'
+            const xyzView = new DataView(xyzPayload.buffer);
+            xyzView.setUint16(0, strBytes.byteLength, false);
+            xyzView.setUint16(2, 0x55c4, false); // 'und'
             xyzPayload.set(strBytes, 4);
 
-            // ©xyz box type bytes: [0xA9, 'x', 'y', 'z']
             const xyzSize = 8 + xyzPayload.byteLength;
             const xyzBox = new Uint8Array(xyzSize);
             new DataView(xyzBox.buffer).setUint32(0, xyzSize, false);
             xyzBox[4] = 0xa9;
-            xyzBox[5] = 0x78; // 'x'
-            xyzBox[6] = 0x79; // 'y'
-            xyzBox[7] = 0x7a; // 'z'
+            xyzBox[5] = 0x78;
+            xyzBox[6] = 0x79;
+            xyzBox[7] = 0x7a;
             xyzBox.set(xyzPayload, 8);
 
-            return B.box('udta', xyzBox);
+            // (B) 3GPP 'loci' (Location Information Box - FullBox v0)
+            const lociBody = new Uint8Array(18);
+            const lociView = new DataView(lociBody.buffer);
+            lociView.setUint16(0, 0x55c4, false); // language 'und'
+            lociBody[2] = 0; // name = ""
+            lociBody[3] = 0; // role = 0 (shooting location)
+            lociView.setInt32(4, Math.round(lon * 65536), false); // longitude (fixed-point 16.16)
+            lociView.setInt32(8, Math.round(lat * 65536), false); // latitude (fixed-point 16.16)
+            lociView.setInt32(12, Math.round(ele * 65536), false); // altitude (fixed-point 16.16)
+            lociBody[16] = 0; // astronomical_body = ""
+            lociBody[17] = 0; // additional_notes = ""
+            const lociBox = B.fullBox('loci', 0, 0, lociBody);
+
+            // (C) iTunes/MP4 'meta' -> 'hdlr'(mdir) + 'ilst' -> '©xyz' -> 'data'(UTF-8)
+            const metaHdlrFixed = new Uint8Array(20);
+            metaHdlrFixed.set(B.strToBytes('mdir'), 4);
+            metaHdlrFixed.set(B.strToBytes('appl'), 8);
+            const metaHdlr = B.fullBox('hdlr', 0, 0, metaHdlrFixed, new Uint8Array([0]));
+
+            const dataBox = B.fullBox('data', 0, 1, B.u32(0), strBytes); // type=1 (UTF-8)
+            const ilstItemSize = 8 + dataBox.byteLength;
+            const ilstItem = new Uint8Array(ilstItemSize);
+            new DataView(ilstItem.buffer).setUint32(0, ilstItemSize, false);
+            ilstItem[4] = 0xa9;
+            ilstItem[5] = 0x78;
+            ilstItem[6] = 0x79;
+            ilstItem[7] = 0x7a;
+            ilstItem.set(dataBox, 8);
+
+            const ilstBox = B.box('ilst', ilstItem);
+            const metaBox = B.fullBox('meta', 0, 0, metaHdlr, ilstBox);
+
+            return B.box('udta', xyzBox, lociBox, metaBox);
         }
 
         /**
@@ -1766,7 +1714,7 @@
             onProgress('トラックテーブルとチャンクオフセットを再計算中...', 75);
             const origMoovBytes = rawBytes.subarray(moovBox.offset, moovBox.offset + moovBox.size);
 
-            // 基準位置のサンプルから標準GPSタグ(udta/©xyz)も構築
+            // 基準位置のサンプルから標準GPSタグ(udta: ©xyz + loci + meta/ilst)も構築
             const anchorSample = samples.find(s => Math.abs(s.videoTime - state.mp4StartOffset) < 0.2) || samples[0];
             const gpsUdtaBox = buildStandardGpsUdtaBox(anchorSample);
 
@@ -1811,8 +1759,21 @@
             }
             outputChunks.push(cammMdatBox);
 
+            onProgress('書き込み完了・メタデータ検証中...', 98);
+            const outBlob = new Blob(outputChunks, { type: 'video/mp4' });
+
+            // 出力バイナリの自己検証（CAMMパケットが正しく読み出せるか確認）
+            const verifyBuf = await outBlob.slice(cammMdatDataOffset, cammMdatDataOffset + 60).arrayBuffer();
+            const verifyView = new DataView(verifyBuf);
+            const packetType = verifyView.getUint16(2, true);
+            const verifyLat = verifyView.getFloat64(16, true);
+            const verifyLon = verifyView.getFloat64(24, true);
+            if (packetType !== 6 || !isFinite(verifyLat) || !isFinite(verifyLon)) {
+                throw new Error('CAMMパケットのバイナリ検証に失敗しました。');
+            }
+
             onProgress('完了', 100);
-            return new Blob(outputChunks, { type: 'video/mp4' });
+            return outBlob;
         }
 
         /**
