@@ -1,1 +1,1863 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAMM MP4 Studio | GPX + MP4 同期＆CAMMメタデータ生成</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS (地図表示用) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            900: '#0f172a',
+                            950: '#080c14',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* カスタムスクロールバーとスライダースタイル */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Leaflet ダークモード調整 */
+        .leaflet-container { background: #0f172a !important; font-family: 'Inter', sans-serif !important; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #1e293b !important;
+            color: #f8fafc !important;
+            border: 1px solid #334155;
+        }
+
+        /* レンジスライダーのカスタマイズ */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 6px;
+            border-radius: 3px;
+            background: #334155;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+
+        /* パルスアニメーション */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.8; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .marker-pulse::before {
+            content: '';
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            border: 2px solid #f43f5e;
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-sky-500/30">
+
+    <!-- ヘッダー -->
+    <header class="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                    <i data-lucide="compass" class="w-5 h-5 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
+                        CAMM MP4 Studio
+                        <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
+                    </h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button id="btnLoadDemo" class="text-xs sm:text-sm px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1.5" title="サンプルGPXとテストMP4を生成して動作を試せます">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i>
+                    <span>サンプルデータ読込</span>
+                </button>
+                <button id="btnHelp" class="p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition" title="使い方・CAMM仕様について">
+                    <i data-lucide="help-circle" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+        <!-- 通知メッセージバナー (alertの代替) -->
+        <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none px-4 sm:px-0"></div>
+
+        <!-- ステップ1: ファイル読み込みエリア -->
+        <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- GPXファイルドロップゾーン -->
+            <div id="dropZoneGpx" class="relative group rounded-2xl border-2 border-dashed border-slate-700/80 hover:border-emerald-500/60 bg-slate-900/50 p-5 transition-all cursor-pointer flex items-center justify-between gap-4">
+                <input type="file" id="inputGpx" accept=".gpx,application/gpx+xml,text/xml" class="hidden">
+                <div class="flex items-center gap-4 min-w-0">
+                    <div id="iconBoxGpx" class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 text-emerald-400 group-hover:scale-105 transition-transform">
+                        <i data-lucide="map-pin" class="w-6 h-6"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">STEP 1-A</span>
+                            <span id="badgeGpxStatus" class="hidden text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-medium">読込完了</span>
+                        </div>
+                        <h2 id="titleGpx" class="font-semibold text-slate-100 truncate mt-0.5">GPXファイルを選択 または ドロップ</h2>
+                        <p id="metaGpx" class="text-xs text-slate-400 truncate mt-0.5">緯度・経度・高度・タイムスタンプを含む .gpx</p>
+                    </div>
+                </div>
+                <span class="px-3 py-1.5 rounded-lg bg-slate-800 group-hover:bg-slate-700 text-xs font-medium text-slate-300 shrink-0 border border-slate-700">選択</span>
+            </div>
+
+            <!-- MP4ファイルドロップゾーン -->
+            <div id="dropZoneMp4" class="relative group rounded-2xl border-2 border-dashed border-slate-700/80 hover:border-sky-500/60 bg-slate-900/50 p-5 transition-all cursor-pointer flex items-center justify-between gap-4">
+                <input type="file" id="inputMp4" accept="video/mp4,.mp4" class="hidden">
+                <div class="flex items-center gap-4 min-w-0">
+                    <div id="iconBoxMp4" class="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0 text-sky-400 group-hover:scale-105 transition-transform">
+                        <i data-lucide="film" class="w-6 h-6"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold uppercase tracking-wider text-sky-400">STEP 1-B</span>
+                            <span id="badgeMp4Status" class="hidden text-[11px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-medium">読込完了</span>
+                        </div>
+                        <h2 id="titleMp4" class="font-semibold text-slate-100 truncate mt-0.5">MP4ファイルを選択 または ドロップ</h2>
+                        <p id="metaMp4" class="text-xs text-slate-400 truncate mt-0.5">H.264 / H.265 等の標準 .mp4 コンテナ</p>
+                    </div>
+                </div>
+                <span class="px-3 py-1.5 rounded-lg bg-slate-800 group-hover:bg-slate-700 text-xs font-medium text-slate-300 shrink-0 border border-slate-700">選択</span>
+            </div>
+        </section>
+
+        <!-- ステップ2: 同期エディタ（地図 ＆ 動画プレイヤー） -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- 左カラム: GPX地図＆スタート位置指定 (7カラム) -->
+            <div class="lg:col-span-7 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col shadow-xl">
+                <div class="px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-900/80">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                        <h3 class="font-semibold text-sm text-slate-100">GPX 軌跡マップ & スタート位置指定</h3>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="text-slate-400 hidden sm:inline">地図上の軌跡クリック または マーカーをドラッグ</span>
+                        <button id="btnFitMap" disabled class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 transition flex items-center gap-1">
+                            <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+                            <span>全体表示</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 地図コンテナ -->
+                <div class="relative w-full h-[360px] sm:h-[420px] bg-slate-950">
+                    <div id="map" class="w-full h-full z-10"></div>
+
+                    <!-- 未読み込み時のオーバーレイ -->
+                    <div id="mapEmptyOverlay" class="absolute inset-0 z-20 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+                        <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-3">
+                            <i data-lucide="map" class="w-7 h-7"></i>
+                        </div>
+                        <p class="text-sm font-medium text-slate-300">GPXファイルが読み込まれていません</p>
+                        <p class="text-xs text-slate-500 mt-1 max-w-xs">GPXファイルを読み込むとここにルートが表示され、スタート位置のアイコンを自由に配置できます。</p>
+                    </div>
+
+                    <!-- 凡例バッジ -->
+                    <div id="mapLegend" class="hidden absolute bottom-3 left-3 z-20 bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-xl px-3 py-2 text-xs space-y-1.5 shadow-lg">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-rose-500 border-2 border-white inline-block"></span>
+                            <span class="text-slate-200 font-medium">GPX スタート基準点 (ドラッグ可)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-sky-400 border-2 border-white inline-block"></span>
+                            <span class="text-slate-300">動画再生中の現在位置プレビュー</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GPX ポイント微調整コントロールバー -->
+                <div class="p-4 bg-slate-850 border-t border-slate-800 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-medium text-rose-400 flex items-center gap-1">
+                                <i data-lucide="flag" class="w-3.5 h-3.5"></i>
+                                GPXスタート位置:
+                            </span>
+                            <span id="gpxStartPointLabel" class="font-mono text-xs bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-slate-200">
+                                -- / --
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button id="btnGpxPrev" disabled class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200" title="1ポイント前へ">
+                                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                            </button>
+                            <button id="btnGpxNext" disabled class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200" title="1ポイント次へ">
+                                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- GPX トラックポイントスライダー -->
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="sliderGpxStart" min="0" max="0" value="0" disabled class="w-full">
+                    </div>
+
+                    <!-- 選択中のGPX詳細メタデータ -->
+                    <div class="grid grid-cols-3 gap-2 pt-1 text-xs">
+                        <div class="bg-slate-900/90 rounded-lg p-2 border border-slate-800/80">
+                            <div class="text-[10px] text-slate-500">緯度 / 経度</div>
+                            <div id="gpxCoordDisplay" class="font-mono text-slate-300 truncate mt-0.5">---, ---</div>
+                        </div>
+                        <div class="bg-slate-900/90 rounded-lg p-2 border border-slate-800/80">
+                            <div class="text-[10px] text-slate-500">GPX 記録時刻 (UTC)</div>
+                            <div id="gpxTimeDisplay" class="font-mono text-slate-300 truncate mt-0.5">--:--:--</div>
+                        </div>
+                        <div class="bg-slate-900/90 rounded-lg p-2 border border-slate-800/80">
+                            <div class="text-[10px] text-slate-500">標高 / 残り時間</div>
+                            <div id="gpxEleDisplay" class="font-mono text-slate-300 truncate mt-0.5">-- m / --s</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右カラム: MP4動画プレイヤー＆スタート位置指定 (5カラム) -->
+            <div class="lg:col-span-5 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col shadow-xl">
+                <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                        <h3 class="font-semibold text-sm text-slate-100">MP4 プレビュー & スタート位置指定</h3>
+                    </div>
+                    <span id="videoResolutionBadge" class="text-[11px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">-- x --</span>
+                </div>
+
+                <!-- 動画プレイヤー領域 -->
+                <div class="relative w-full h-[260px] sm:h-[300px] bg-black flex items-center justify-center overflow-hidden">
+                    <video id="videoPlayer" class="w-full h-full object-contain" playsinline muted></video>
+
+                    <!-- 未読み込み時のオーバーレイ -->
+                    <div id="videoEmptyOverlay" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center">
+                        <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-3">
+                            <i data-lucide="video" class="w-7 h-7"></i>
+                        </div>
+                        <p class="text-sm font-medium text-slate-300">MP4ファイルが読み込まれていません</p>
+                        <p class="text-xs text-slate-500 mt-1 max-w-xs">MP4動画を読み込むと、再生バーからGPXと同期させる開始フレームを指定できます。</p>
+                    </div>
+
+                    <!-- 同期ステータスオーバーレイHUD -->
+                    <div id="videoSyncHud" class="hidden absolute top-3 left-3 right-3 flex justify-between items-center pointer-events-none">
+                        <span id="hudSyncBadge" class="px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-slate-900/85 text-sky-300 border border-sky-500/30 backdrop-blur">
+                            SYNC READY
+                        </span>
+                        <span id="hudCurrentTime" class="px-2.5 py-1 rounded-md text-[11px] font-mono bg-slate-900/85 text-slate-200 border border-slate-700 backdrop-blur">
+                            00:00.000
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 動画再生バー＆スタート位置指定パネル -->
+                <div class="p-4 bg-slate-850 border-t border-slate-800 flex-1 flex flex-col justify-between space-y-4">
+                    <!-- 再生シークバー -->
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+                            <span id="videoCurrentTimeLabel">00:00.000</span>
+                            <span id="videoDurationLabel">00:00.000</span>
+                        </div>
+                        <div class="relative flex items-center">
+                            <!-- スタート位置マーカーインジケータ -->
+                            <div id="videoStartMarkerBar" class="hidden absolute top-1/2 -translate-y-1/2 w-1 h-4 bg-amber-400 rounded pointer-events-none z-10 shadow-[0_0_8px_#fbbf24]" style="left: 0%;"></div>
+                            <input type="range" id="sliderVideoSeek" min="0" max="100" step="0.001" value="0" disabled class="w-full z-20">
+                        </div>
+                    </div>
+
+                    <!-- 再生コントロールボタン -->
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-1.5">
+                            <button id="btnVideoPlayPause" disabled class="px-3 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-xs flex items-center gap-1.5 transition">
+                                <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+                                <span>再生</span>
+                            </button>
+                            <button id="btnFrameBack" disabled class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 border border-slate-700" title="-0.1秒">
+                                <i data-lucide="rewind" class="w-4 h-4"></i>
+                            </button>
+                            <button id="btnFrameForward" disabled class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 border border-slate-700" title="+0.1秒">
+                                <i data-lucide="fast-forward" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+
+                        <!-- 現在の再生位置をスタート位置として固定するボタン -->
+                        <button id="btnSetVideoStart" disabled class="px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-40 text-amber-300 border border-amber-500/40 font-semibold text-xs flex items-center gap-1.5 transition">
+                            <i data-lucide="pin" class="w-3.5 h-3.5"></i>
+                            <span>現在位置をスタートに設定</span>
+                        </button>
+                    </div>
+
+                    <!-- 指定された動画スタート位置情報 -->
+                    <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
+                        <div>
+                            <div class="text-[11px] text-slate-400 flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                指定済み MP4 スタート位置
+                            </div>
+                            <div id="videoStartOffsetDisplay" class="font-mono text-sm font-semibold text-amber-300 mt-0.5">
+                                00:00.000 (0.000 秒)
+                            </div>
+                        </div>
+                        <button id="btnJumpToVideoStart" disabled class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 transition">
+                            スタート位置へ移動
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ステップ3: 同期マッピング確認 & CAMM MP4 生成・出力パネル -->
+        <section class="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border border-slate-800 p-5 sm:p-6 shadow-xl">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+
+                <!-- 同期サマリー情報 -->
+                <div class="space-y-3 flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">STEP 3</span>
+                        <h3 class="font-bold text-base sm:text-lg text-slate-100">同期マッピング & CAMM MP4 エクスポート</h3>
+                    </div>
+
+                    <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                        指定した <span class="text-amber-300 font-medium">MP4スタート位置</span> と <span class="text-rose-400 font-medium">GPXスタート基準点</span> を時間軸上で一致させ、動画全編に対応する <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-sky-300">camm</code> (Camera Motion Metadata) トラックをMP4コンテナに追記・再構築します。
+                    </p>
+
+                    <!-- 同期計算メトリクス -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                        <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
+                            <div class="text-[11px] text-slate-500">MP4 開始オフセット</div>
+                            <div id="summaryMp4Start" class="font-mono text-sm font-semibold text-amber-300 mt-0.5">--.-- s</div>
+                        </div>
+                        <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
+                            <div class="text-[11px] text-slate-500">GPX 開始インデックス</div>
+                            <div id="summaryGpxStart" class="font-mono text-sm font-semibold text-rose-400 mt-0.5">#--</div>
+                        </div>
+                        <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
+                            <div class="text-[11px] text-slate-500">紐づけ有効サンプル数</div>
+                            <div id="summaryMatchedSamples" class="font-mono text-sm font-semibold text-emerald-400 mt-0.5">0 サンプル</div>
+                        </div>
+                        <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
+                            <div class="text-[11px] text-slate-500">出力形式</div>
+                            <div class="font-mono text-sm font-semibold text-sky-300 mt-0.5">MP4 (CAMM Type 6)</div>
+                        </div>
+                    </div>
+
+                    <!-- オプション設定 -->
+                    <div class="flex flex-wrap items-center gap-4 pt-1 text-xs text-slate-300">
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" id="chkInterpolate" checked class="rounded bg-slate-800 border-slate-600 text-sky-500 focus:ring-sky-500">
+                            <span>サンプル間を線形補間して10Hz (0.1秒間隔) で滑らかに出力する</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 生成実行ボタンエリア -->
+                <div class="flex flex-col items-stretch sm:items-end justify-center gap-3 shrink-0 lg:w-72">
+                    <button id="btnGenerateCamm" disabled class="w-full py-3.5 px-6 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-bold text-sm shadow-lg shadow-sky-500/20 disabled:shadow-none transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed">
+                        <i data-lucide="cpu" class="w-5 h-5"></i>
+                        <span>CAMM MP4 を生成・ダウンロード</span>
+                    </button>
+
+                    <!-- プログレスバー -->
+                    <div id="progressContainer" class="hidden w-full space-y-1.5">
+                        <div class="flex justify-between text-[11px] font-mono text-sky-300">
+                            <span id="progressStatus">MP4バイナリ解析中...</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="progressBar" class="h-full bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-200" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <p class="text-[11px] text-slate-500 text-center sm:text-right">
+                        ※ 処理はすべてブラウザ内で完結し、サーバーへ動画は送信されません。
+                    </p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ヘルプモーダル -->
+    <div id="helpModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
+                    <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
+                    CAMM MP4 Studio について
+                </h3>
+                <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed">
+                <p>
+                    <strong>Google CAMM (Camera Motion Metadata)</strong> は、Google Street View 等で採用されているMP4コンテナ内の標準メタデータ仕様です。動画トラックと並行して専用の <code class="text-sky-300 bg-slate-800 px-1 rounded">camm</code> トラックを格納します。
+                </p>
+                <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <div class="font-semibold text-slate-200">操作手順：</div>
+                    <ol class="list-decimal list-inside space-y-1 text-slate-400">
+                        <li><strong class="text-emerald-400">GPXファイル</strong> と <strong class="text-sky-400">MP4ファイル</strong> をそれぞれ読み込みます。</li>
+                        <li>地図上の赤いスタートアイコンをドラッグ（または軌跡をクリック）して、基準となる位置を指定します。</li>
+                        <li>動画の再生バーを動かし、地図の基準点と一致する場面で「現在位置をスタートに設定」を押します。</li>
+                        <li>「CAMM MP4 を生成・ダウンロード」を押すと、映像を再エンコードせず高速にメタデータトラックを埋め込んで出力します。</li>
+                    </ol>
+                </div>
+                <p class="text-xs text-slate-400">
+                    ※ 出力されるCAMMパケットは <strong>Type 6 (GPS Location)</strong> フォーマット（緯度・経度・高度・水平/垂直精度・GPS時刻）でバイナリエンコードされます。
+                </p>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button id="btnCloseHelpBottom" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * CAMM MP4 Studio - メインアプリケーションロジック
+         * 1. GPXパーサー & 時間軸計算
+         * 2. Leaflet地図インタラクション（スタート位置指定＆リアルタイムプレビュー）
+         * 3. MP4プレイヤー同期制御
+         * 4. ISO Base Media File Format (MP4) バイナリパーサー＆CAMMトラックインジェクタ
+         * ============================================================================
+         */
+
+        // Lucideアイコン初期化
+        lucide.createIcons();
+
+        // アプリケーション状態管理
+        const state = {
+            gpxFile: null,
+            gpxPoints: [],        // { lat, lon, ele, time: Date|null, elapsedSec: number }
+            gpxStartIndex: 0,     // 地図上で指定されたスタート基準点インデックス
+
+            mp4File: null,
+            mp4Url: null,
+            mp4Duration: 0,
+            mp4StartOffset: 0,    // 動画内で指定されたスタート秒数
+
+            map: null,
+            polyline: null,
+            startMarker: null,    // 赤いスタート基準マーカー（ドラッグ可能）
+            currentMarker: null,  // 青い現在再生位置プレビューマーカー
+            pointLayerGroup: null
+        };
+
+        // DOM要素の参照キャッシュ
+        const el = {
+            dropZoneGpx: document.getElementById('dropZoneGpx'),
+            inputGpx: document.getElementById('inputGpx'),
+            titleGpx: document.getElementById('titleGpx'),
+            metaGpx: document.getElementById('metaGpx'),
+            badgeGpxStatus: document.getElementById('badgeGpxStatus'),
+
+            dropZoneMp4: document.getElementById('dropZoneMp4'),
+            inputMp4: document.getElementById('inputMp4'),
+            titleMp4: document.getElementById('titleMp4'),
+            metaMp4: document.getElementById('metaMp4'),
+            badgeMp4Status: document.getElementById('badgeMp4Status'),
+
+            mapEmptyOverlay: document.getElementById('mapEmptyOverlay'),
+            mapLegend: document.getElementById('mapLegend'),
+            btnFitMap: document.getElementById('btnFitMap'),
+            sliderGpxStart: document.getElementById('sliderGpxStart'),
+            btnGpxPrev: document.getElementById('btnGpxPrev'),
+            btnGpxNext: document.getElementById('btnGpxNext'),
+            gpxStartPointLabel: document.getElementById('gpxStartPointLabel'),
+            gpxCoordDisplay: document.getElementById('gpxCoordDisplay'),
+            gpxTimeDisplay: document.getElementById('gpxTimeDisplay'),
+            gpxEleDisplay: document.getElementById('gpxEleDisplay'),
+
+            videoPlayer: document.getElementById('videoPlayer'),
+            videoEmptyOverlay: document.getElementById('videoEmptyOverlay'),
+            videoResolutionBadge: document.getElementById('videoResolutionBadge'),
+            videoSyncHud: document.getElementById('videoSyncHud'),
+            hudSyncBadge: document.getElementById('hudSyncBadge'),
+            hudCurrentTime: document.getElementById('hudCurrentTime'),
+            videoCurrentTimeLabel: document.getElementById('videoCurrentTimeLabel'),
+            videoDurationLabel: document.getElementById('videoDurationLabel'),
+            sliderVideoSeek: document.getElementById('sliderVideoSeek'),
+            videoStartMarkerBar: document.getElementById('videoStartMarkerBar'),
+            btnVideoPlayPause: document.getElementById('btnVideoPlayPause'),
+            btnFrameBack: document.getElementById('btnFrameBack'),
+            btnFrameForward: document.getElementById('btnFrameForward'),
+            btnSetVideoStart: document.getElementById('btnSetVideoStart'),
+            videoStartOffsetDisplay: document.getElementById('videoStartOffsetDisplay'),
+            btnJumpToVideoStart: document.getElementById('btnJumpToVideoStart'),
+
+            summaryMp4Start: document.getElementById('summaryMp4Start'),
+            summaryGpxStart: document.getElementById('summaryGpxStart'),
+            summaryMatchedSamples: document.getElementById('summaryMatchedSamples'),
+            chkInterpolate: document.getElementById('chkInterpolate'),
+            btnGenerateCamm: document.getElementById('btnGenerateCamm'),
+            progressContainer: document.getElementById('progressContainer'),
+            progressStatus: document.getElementById('progressStatus'),
+            progressPercent: document.getElementById('progressPercent'),
+            progressBar: document.getElementById('progressBar'),
+
+            btnLoadDemo: document.getElementById('btnLoadDemo'),
+            btnHelp: document.getElementById('btnHelp'),
+            helpModal: document.getElementById('helpModal'),
+            btnCloseHelp: document.getElementById('btnCloseHelp'),
+            btnCloseHelpBottom: document.getElementById('btnCloseHelpBottom'),
+            toastContainer: document.getElementById('toastContainer')
+        };
+
+        /**
+         * トースト通知表示 (alert()の代替)
+         */
+        function showToast(message, type = 'info') {
+            const colors = {
+                info: 'bg-slate-800 border-sky-500/50 text-slate-100',
+                success: 'bg-slate-800 border-emerald-500/50 text-emerald-200',
+                error: 'bg-slate-900 border-rose-500/60 text-rose-200',
+                warning: 'bg-slate-800 border-amber-500/50 text-amber-200'
+            };
+            const icons = {
+                info: 'info',
+                success: 'check-circle-2',
+                error: 'alert-triangle',
+                warning: 'alert-circle'
+            };
+
+            const toast = document.createElement('div');
+            toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-xl backdrop-blur-md text-xs sm:text-sm transition-all duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+            toast.innerHTML = `
+                <i data-lucide="${icons[type] || 'info'}" class="w-4 h-4 shrink-0"></i>
+                <span class="flex-1">${message}</span>
+            `;
+            el.toastContainer.appendChild(toast);
+            lucide.createIcons({ root: toast });
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        /**
+         * 時間フォーマットユーティリティ (MM:SS.mmm)
+         */
+        function formatTime(sec) {
+            if (!isFinite(sec) || sec < 0) sec = 0;
+            const mins = Math.floor(sec / 60);
+            const secs = Math.floor(sec % 60);
+            const ms = Math.floor((sec % 1) * 1000);
+            return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+        }
+
+        /**
+         * ============================================================================
+         * 1. 地図 (Leaflet) の初期化と制御
+         * ============================================================================
+         */
+        function initMap() {
+            state.map = L.map('map', {
+                zoomControl: true,
+                attributionControl: true
+            }).setView([35.681236, 139.767125], 13);
+
+            // ダークテーマに合うCartoDB Dark Matterタイル + OpenStreetMapフォールバック
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO',
+                subdomains: 'abcd',
+                maxZoom: 20
+            }).addTo(state.map);
+
+            state.pointLayerGroup = L.layerGroup().addTo(state.map);
+        }
+
+        /**
+         * 最も近いGPXトラックポイントのインデックスを検索
+         */
+        function findNearestGpxPointIndex(latlng) {
+            if (!state.gpxPoints.length) return 0;
+            let minDist = Infinity;
+            let bestIdx = 0;
+            for (let i = 0; i < state.gpxPoints.length; i++) {
+                const p = state.gpxPoints[i];
+                const dLat = p.lat - latlng.lat;
+                const dLon = p.lon - latlng.lng;
+                const dist = dLat * dLat + dLon * dLon;
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestIdx = i;
+                }
+            }
+            return bestIdx;
+        }
+
+        /**
+         * GPX軌跡を地図に描画し、ドラッグ可能なスタートマーカーを配置
+         */
+        function renderGpxOnMap() {
+            if (!state.map || state.gpxPoints.length === 0) return;
+
+            el.mapEmptyOverlay.classList.add('hidden');
+            el.mapLegend.classList.remove('hidden');
+            el.btnFitMap.disabled = false;
+
+            // 既存レイヤーのクリア
+            if (state.polyline) state.map.removeLayer(state.polyline);
+            if (state.startMarker) state.map.removeLayer(state.startMarker);
+            if (state.currentMarker) state.map.removeLayer(state.currentMarker);
+            state.pointLayerGroup.clearLayers();
+
+            const latlngs = state.gpxPoints.map(p => [p.lat, p.lon]);
+
+            // メイン軌跡ポリライン
+            state.polyline = L.polyline(latlngs, {
+                color: '#10b981',
+                weight: 5,
+                opacity: 0.85,
+                lineJoin: 'round'
+            }).addTo(state.map);
+
+            // ポリラインクリックでその地点をスタート位置に指定可能にする
+            state.polyline.on('click', (e) => {
+                const idx = findNearestGpxPointIndex(e.latlng);
+                setGpxStartIndex(idx);
+                showToast(`地図上のクリック位置 (Point #${idx + 1}) をGPXスタート位置に設定しました`, 'info');
+            });
+
+            // トラックポイントが多い場合は間引いてクリック可能な小円を描画
+            const step = Math.max(1, Math.floor(state.gpxPoints.length / 250));
+            for (let i = 0; i < state.gpxPoints.length; i += step) {
+                const pt = state.gpxPoints[i];
+                const circle = L.circleMarker([pt.lat, pt.lon], {
+                    radius: 4,
+                    color: '#34d399',
+                    fillColor: '#064e3b',
+                    fillOpacity: 0.8,
+                    weight: 1.5
+                });
+                circle.on('click', () => setGpxStartIndex(i));
+                state.pointLayerGroup.addLayer(circle);
+            }
+
+            // 赤いスタート基準マーカー（ドラッグ可能）
+            const startIcon = L.divIcon({
+                className: 'custom-start-icon',
+                html: `<div class="relative w-6 h-6 -ml-3 -mt-3 rounded-full bg-rose-500 border-2 border-white shadow-lg flex items-center justify-center marker-pulse cursor-grab active:cursor-grabbing">
+                        <div class="w-2 h-2 rounded-full bg-white"></div>
+                       </div>`,
+                iconSize: [0, 0]
+            });
+
+            const initialPt = state.gpxPoints[state.gpxStartIndex];
+            state.startMarker = L.marker([initialPt.lat, initialPt.lon], {
+                icon: startIcon,
+                draggable: true,
+                zIndexOffset: 1000
+            }).addTo(state.map);
+
+            state.startMarker.bindTooltip('ドラッグしてGPXスタート位置を指定', {
+                direction: 'top',
+                offset: [0, -12]
+            });
+
+            // ドラッグ中・ドラッグ終了時に軌跡上の最寄りポイントにスナップ
+            state.startMarker.on('drag', (e) => {
+                const idx = findNearestGpxPointIndex(e.latlng);
+                updateGpxStartUIOnly(idx);
+            });
+
+            state.startMarker.on('dragend', (e) => {
+                const idx = findNearestGpxPointIndex(e.target.getLatLng());
+                setGpxStartIndex(idx);
+                showToast(`GPXスタート位置を Point #${idx + 1} にスナップしました`, 'success');
+            });
+
+            // 青い動画再生位置プレビューマーカー
+            const currentIcon = L.divIcon({
+                className: 'custom-current-icon',
+                html: `<div class="w-4 h-4 -ml-2 -mt-2 rounded-full bg-sky-400 border-2 border-white shadow-[0_0_12px_#38bdf8]"></div>`,
+                iconSize: [0, 0]
+            });
+
+            state.currentMarker = L.marker([initialPt.lat, initialPt.lon], {
+                icon: currentIcon,
+                interactive: false,
+                zIndexOffset: 900
+            }).addTo(state.map);
+
+            state.map.fitBounds(state.polyline.getBounds(), { padding: [40, 40] });
+            setGpxStartIndex(0);
+        }
+
+        /**
+         * GPXスタートインデックスの設定とUI更新
+         */
+        function setGpxStartIndex(idx) {
+            if (!state.gpxPoints.length) return;
+            idx = Math.max(0, Math.min(state.gpxPoints.length - 1, idx));
+            state.gpxStartIndex = idx;
+
+            const pt = state.gpxPoints[idx];
+            if (state.startMarker) {
+                state.startMarker.setLatLng([pt.lat, pt.lon]);
+            }
+
+            updateGpxStartUIOnly(idx);
+            updateSyncPreview();
+            updateSummaryMetrics();
+        }
+
+        function updateGpxStartUIOnly(idx) {
+            const pt = state.gpxPoints[idx];
+            const total = state.gpxPoints.length;
+            const lastPt = state.gpxPoints[total - 1];
+            const remainingSec = Math.max(0, lastPt.elapsedSec - pt.elapsedSec);
+
+            el.sliderGpxStart.value = idx;
+            el.gpxStartPointLabel.textContent = `#${idx + 1} / ${total}`;
+            el.gpxCoordDisplay.textContent = `${pt.lat.toFixed(6)}, ${pt.lon.toFixed(6)}`;
+            el.gpxTimeDisplay.textContent = pt.time ? pt.time.toISOString().replace('T', ' ').substring(0, 19) : `+${pt.elapsedSec.toFixed(1)}s`;
+            el.gpxEleDisplay.textContent = `${pt.ele.toFixed(1)} m / 残り ${remainingSec.toFixed(1)}s`;
+        }
+
+        /**
+         * ============================================================================
+         * 2. GPX ファイル解析
+         * ============================================================================
+         */
+        function parseGpxText(xmlText) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+            const parseError = xmlDoc.querySelector('parsererror');
+            if (parseError) {
+                throw new Error('GPX (XML) の構文解析に失敗しました。ファイル形式を確認してください。');
+            }
+
+            let trkpts = Array.from(xmlDoc.querySelectorAll('trkpt'));
+            if (trkpts.length === 0) {
+                // trkptが無い場合はrteptやwptをフォールバック検索
+                trkpts = Array.from(xmlDoc.querySelectorAll('rtept, wpt'));
+            }
+            if (trkpts.length < 2) {
+                throw new Error('GPXファイル内に有効な座標ポイントが2点以上見つかりませんでした。');
+            }
+
+            const points = [];
+            let baseTimeMs = null;
+
+            trkpts.forEach((pt, index) => {
+                const lat = parseFloat(pt.getAttribute('lat'));
+                const lon = parseFloat(pt.getAttribute('lon'));
+                if (isNaN(lat) || isNaN(lon)) return;
+
+                const eleNode = pt.querySelector('ele');
+                const ele = eleNode ? parseFloat(eleNode.textContent) || 0 : 0;
+
+                const timeNode = pt.querySelector('time');
+                let timeObj = null;
+                if (timeNode && timeNode.textContent) {
+                    const parsed = new Date(timeNode.textContent.trim());
+                    if (!isNaN(parsed.getTime())) {
+                        timeObj = parsed;
+                    }
+                }
+
+                if (index === 0 && timeObj) {
+                    baseTimeMs = timeObj.getTime();
+                }
+
+                // タイムスタンプが無い場合は1秒間隔として仮定
+                const elapsedSec = (timeObj && baseTimeMs !== null)
+                    ? (timeObj.getTime() - baseTimeMs) / 1000.0
+                    : index * 1.0;
+
+                points.push({
+                    lat,
+                    lon,
+                    ele,
+                    time: timeObj,
+                    elapsedSec
+                });
+            });
+
+            if (points.length < 2) {
+                throw new Error('有効な緯度・経度座標が不足しています。');
+            }
+
+            return points;
+        }
+
+        async function handleGpxFile(file) {
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const points = parseGpxText(text);
+
+                state.gpxFile = file;
+                state.gpxPoints = points;
+                state.gpxStartIndex = 0;
+
+                // UI更新
+                el.titleGpx.textContent = file.name;
+                const duration = points[points.length - 1].elapsedSec;
+                el.metaGpx.textContent = `${points.length} ポイント • 総記録時間: ${duration.toFixed(1)} 秒`;
+                el.badgeGpxStatus.classList.remove('hidden');
+
+                el.sliderGpxStart.disabled = false;
+                el.sliderGpxStart.min = 0;
+                el.sliderGpxStart.max = points.length - 1;
+                el.sliderGpxStart.value = 0;
+                el.btnGpxPrev.disabled = false;
+                el.btnGpxNext.disabled = false;
+
+                renderGpxOnMap();
+                checkReadyState();
+                showToast(`GPXを読み込みました (${points.length}地点)`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'GPXファイルの読み込みに失敗しました', 'error');
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 3. MP4 動画プレイヤーと同期計算
+         * ============================================================================
+         */
+        function handleMp4File(file) {
+            if (!file) return;
+            try {
+                if (state.mp4Url) {
+                    URL.revokeObjectURL(state.mp4Url);
+                }
+
+                state.mp4File = file;
+                state.mp4Url = URL.createObjectURL(file);
+                state.mp4StartOffset = 0;
+
+                el.videoPlayer.src = state.mp4Url;
+                el.videoPlayer.load();
+
+                el.titleMp4.textContent = file.name;
+                const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                el.metaMp4.textContent = `${sizeMB} MB • MP4 Video`;
+                el.badgeMp4Status.classList.remove('hidden');
+
+                showToast(`MP4ファイルを読み込みました (${sizeMB} MB)`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('MP4ファイルの読み込みに失敗しました', 'error');
+            }
+        }
+
+        // 動画メタデータ読み込み完了イベント
+        el.videoPlayer.addEventListener('loadedmetadata', () => {
+            state.mp4Duration = el.videoPlayer.duration || 0;
+            el.videoEmptyOverlay.classList.add('hidden');
+            el.videoSyncHud.classList.remove('hidden');
+            el.videoStartMarkerBar.classList.remove('hidden');
+
+            el.videoResolutionBadge.textContent = `${el.videoPlayer.videoWidth} x ${el.videoPlayer.videoHeight}`;
+            el.videoDurationLabel.textContent = formatTime(state.mp4Duration);
+            el.sliderVideoSeek.disabled = false;
+            el.sliderVideoSeek.min = 0;
+            el.sliderVideoSeek.max = state.mp4Duration;
+            el.sliderVideoSeek.value = 0;
+
+            el.btnVideoPlayPause.disabled = false;
+            el.btnFrameBack.disabled = false;
+            el.btnFrameForward.disabled = false;
+            el.btnSetVideoStart.disabled = false;
+            el.btnJumpToVideoStart.disabled = false;
+
+            setVideoStartOffset(0);
+            checkReadyState();
+        });
+
+        // 動画再生位置の更新イベント
+        el.videoPlayer.addEventListener('timeupdate', () => {
+            const cur = el.videoPlayer.currentTime;
+            el.sliderVideoSeek.value = cur;
+            el.videoCurrentTimeLabel.textContent = formatTime(cur);
+            el.hudCurrentTime.textContent = formatTime(cur);
+            updateSyncPreview();
+        });
+
+        el.videoPlayer.addEventListener('play', () => {
+            el.btnVideoPlayPause.innerHTML = `<i data-lucide="pause" class="w-4 h-4 fill-current"></i><span>一時停止</span>`;
+            lucide.createIcons({ root: el.btnVideoPlayPause });
+        });
+
+        el.videoPlayer.addEventListener('pause', () => {
+            el.btnVideoPlayPause.innerHTML = `<i data-lucide="play" class="w-4 h-4 fill-current"></i><span>再生</span>`;
+            lucide.createIcons({ root: el.btnVideoPlayPause });
+        });
+
+        function setVideoStartOffset(sec) {
+            sec = Math.max(0, Math.min(state.mp4Duration, sec));
+            state.mp4StartOffset = sec;
+
+            el.videoStartOffsetDisplay.textContent = `${formatTime(sec)} (${sec.toFixed(3)} 秒)`;
+            const pct = state.mp4Duration > 0 ? (sec / state.mp4Duration) * 100 : 0;
+            el.videoStartMarkerBar.style.left = `calc(${pct}% - 2px)`;
+
+            updateSyncPreview();
+            updateSummaryMetrics();
+        }
+
+        /**
+         * 指定された2つのスタート位置をもとに、任意の動画時刻 t に対応するGPX座標を補間算出
+         */
+        function getInterpolatedGpxAtVideoTime(videoTimeSec) {
+            if (state.gpxPoints.length === 0) return null;
+
+            const startGpxPt = state.gpxPoints[state.gpxStartIndex];
+            // 動画のスタート基準点からの経過秒数
+            const deltaFromSyncStart = videoTimeSec - state.mp4StartOffset;
+            // GPX上の目標経過秒数
+            const targetGpxElapsed = startGpxPt.elapsedSec + deltaFromSyncStart;
+
+            const firstElapsed = state.gpxPoints[0].elapsedSec;
+            const lastElapsed = state.gpxPoints[state.gpxPoints.length - 1].elapsedSec;
+
+            // 範囲外クランプ
+            if (targetGpxElapsed <= firstElapsed) {
+                return { ...state.gpxPoints[0], inRange: targetGpxElapsed >= firstElapsed - 0.5 };
+            }
+            if (targetGpxElapsed >= lastElapsed) {
+                return { ...state.gpxPoints[state.gpxPoints.length - 1], inRange: false };
+            }
+
+            // 二分探索で該当区間を検索
+            let low = 0;
+            let high = state.gpxPoints.length - 1;
+            while (low <= high) {
+                const mid = (low + high) >> 1;
+                if (state.gpxPoints[mid].elapsedSec < targetGpxElapsed) {
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+
+            const i1 = Math.max(1, low);
+            const i0 = i1 - 1;
+            const p0 = state.gpxPoints[i0];
+            const p1 = state.gpxPoints[i1];
+
+            const span = p1.elapsedSec - p0.elapsedSec;
+            const ratio = span > 0 ? (targetGpxElapsed - p0.elapsedSec) / span : 0;
+
+            return {
+                lat: p0.lat + (p1.lat - p0.lat) * ratio,
+                lon: p0.lon + (p1.lon - p0.lon) * ratio,
+                ele: p0.ele + (p1.ele - p0.ele) * ratio,
+                time: p0.time ? new Date(p0.time.getTime() + deltaFromSyncStart * 1000) : null,
+                elapsedSec: targetGpxElapsed,
+                inRange: true
+            };
+        }
+
+        /**
+         * 動画の現在再生フレームに合わせて地図上の青いマーカーとHUDを更新
+         */
+        function updateSyncPreview() {
+            if (!state.gpxPoints.length || !state.mp4File) return;
+
+            const curVideoTime = el.videoPlayer.currentTime || 0;
+            const interp = getInterpolatedGpxAtVideoTime(curVideoTime);
+
+            if (interp && state.currentMarker) {
+                state.currentMarker.setLatLng([interp.lat, interp.lon]);
+            }
+
+            if (curVideoTime < state.mp4StartOffset) {
+                el.hudSyncBadge.textContent = `BEFORE START (-${(state.mp4StartOffset - curVideoTime).toFixed(2)}s)`;
+                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-amber-950/90 text-amber-300 border border-amber-500/40 backdrop-blur';
+            } else if (interp && interp.inRange) {
+                el.hudSyncBadge.textContent = `SYNCED (+${(curVideoTime - state.mp4StartOffset).toFixed(2)}s)`;
+                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 backdrop-blur';
+            } else {
+                el.hudSyncBadge.textContent = `GPX END REACHED`;
+                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-slate-900/90 text-slate-400 border border-slate-700 backdrop-blur';
+            }
+        }
+
+        function checkReadyState() {
+            const isReady = state.gpxPoints.length > 0 && state.mp4File !== null;
+            el.btnGenerateCamm.disabled = !isReady;
+            updateSummaryMetrics();
+        }
+
+        function updateSummaryMetrics() {
+            el.summaryMp4Start.textContent = state.mp4File ? `${state.mp4StartOffset.toFixed(3)} s` : '--.-- s';
+            el.summaryGpxStart.textContent = state.gpxPoints.length ? `#${state.gpxStartIndex + 1}` : '#--';
+
+            if (state.gpxPoints.length && state.mp4File) {
+                const samples = buildCammSamples();
+                el.summaryMatchedSamples.textContent = `${samples.length} サンプル`;
+            } else {
+                el.summaryMatchedSamples.textContent = '0 サンプル';
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 4. CAMM (Camera Motion Metadata) サンプル構築 & MP4バイナリ生成エンジン
+         * ============================================================================
+         * Google CAMM Specification:
+         * - Handler Type: 'meta' (または 'camm')
+         * - Sample Entry Box: 'camm'
+         * - Packet Format (Little Endian):
+         *   [uint16 reserved = 0][uint16 type][payload...]
+         *   Type 6 (GPS):
+         *     float64 time_gps_epoch (seconds since GPS epoch 1980-01-06T00:00:00Z)
+         *     int32   gps_fix_type (3 = 3D fix)
+         *     float64 latitude (degrees)
+         *     float64 longitude (degrees)
+         *     float32 altitude (meters)
+         *     float32 horizontal_accuracy (meters)
+         *     float32 vertical_accuracy (meters)
+         *     float32 velocity_east (m/s)
+         *     float32 velocity_north (m/s)
+         *     float32 velocity_up (m/s)
+         *     float32 speed_accuracy (m/s)
+         *   Total Type 6 payload = 56 bytes + 4 bytes header = 60 bytes per sample
+         */
+
+        // GPS Epoch (1980-01-06T00:00:00Z) の UNIXミリ秒
+        const GPS_EPOCH_UNIX_MS = Date.UTC(1980, 0, 6, 0, 0, 0);
+        // UTCとGPS時刻のうるう秒オフセット (2026年現在 +18秒)
+        const GPS_LEAP_SECONDS = 18;
+
+        /**
+         * 2点間の距離(m)と速度成分(East, North, Up)を計算
+         */
+        function computeVelocityComponents(p0, p1, dt) {
+            if (dt <= 0.0001) return { ve: 0, vn: 0, vu: 0 };
+            const R = 6378137.0; // WGS84 地球半径(m)
+            const dLat = (p1.lat - p0.lat) * Math.PI / 180;
+            const dLon = (p1.lon - p0.lon) * Math.PI / 180;
+            const meanLat = ((p0.lat + p1.lat) * 0.5) * Math.PI / 180;
+
+            const northMeters = dLat * R;
+            const eastMeters = dLon * R * Math.cos(meanLat);
+            const upMeters = (p1.ele - p0.ele);
+
+            return {
+                ve: eastMeters / dt,
+                vn: northMeters / dt,
+                vu: upMeters / dt
+            };
+        }
+
+        /**
+         * 同期設定に基づき、動画タイムライン (0 〜 mp4Duration) にマッピングされた
+         * CAMM Type 6 サンプル配列を生成する
+         */
+        function buildCammSamples() {
+            const duration = state.mp4Duration || 10;
+            const interpolate = el.chkInterpolate.checked;
+            const stepSec = interpolate ? 0.1 : 1.0; // 10Hz または 1Hz
+            const samples = [];
+
+            const startGpxPt = state.gpxPoints[state.gpxStartIndex];
+            const baseUnixMs = startGpxPt.time ? startGpxPt.time.getTime() : Date.now();
+
+            // 動画の 0秒 から終了までサンプルを生成
+            // 動画スタート位置(mp4StartOffset)より前の区間はGPXスタート地点の座標をホールド
+            for (let t = 0; t < duration; t += stepSec) {
+                const sampleDuration = Math.min(stepSec, duration - t);
+                if (sampleDuration <= 0.001) break;
+
+                const effectiveVideoTime = Math.max(state.mp4StartOffset, t);
+                const pt = getInterpolatedGpxAtVideoTime(effectiveVideoTime);
+                const nextPt = getInterpolatedGpxAtVideoTime(effectiveVideoTime + stepSec);
+
+                if (!pt) continue;
+
+                const vel = nextPt ? computeVelocityComponents(pt, nextPt, stepSec) : { ve: 0, vn: 0, vu: 0 };
+                const currentUnixMs = baseUnixMs + (effectiveVideoTime - state.mp4StartOffset) * 1000;
+                const gpsTimeSec = (currentUnixMs - GPS_EPOCH_UNIX_MS) / 1000.0 + GPS_LEAP_SECONDS;
+
+                samples.push({
+                    videoTime: t,
+                    durationSec: sampleDuration,
+                    gpsTimeSec,
+                    lat: pt.lat,
+                    lon: pt.lon,
+                    ele: pt.ele,
+                    ve: vel.ve,
+                    vn: vel.vn,
+                    vu: vel.vu
+                });
+            }
+
+            return samples;
+        }
+
+        /**
+         * 1サンプル分の CAMM Type 6 (GPS) バイナリパケット (60 bytes) を生成
+         */
+        function encodeCammType6Packet(sample) {
+            const buffer = new ArrayBuffer(60);
+            const view = new DataView(buffer);
+
+            // Header (4 bytes)
+            view.setUint16(0, 0, true); // reserved = 0 (Little Endian)
+            view.setUint16(2, 6, true); // packet type = 6 (GPS)
+
+            // Payload (56 bytes) - Little Endian per Google CAMM spec
+            view.setFloat64(4, sample.gpsTimeSec, true);  // time_gps_epoch
+            view.setInt32(12, 3, true);                   // gps_fix_type (3 = 3D fix)
+            view.setFloat64(16, sample.lat, true);        // latitude
+            view.setFloat64(24, sample.lon, true);        // longitude
+            view.setFloat32(32, sample.ele, true);        // altitude
+            view.setFloat32(36, 3.0, true);               // horizontal_accuracy (m)
+            view.setFloat32(40, 5.0, true);               // vertical_accuracy (m)
+            view.setFloat32(44, sample.ve, true);         // velocity_east
+            view.setFloat32(48, sample.vn, true);         // velocity_north
+            view.setFloat32(52, sample.vu, true);         // velocity_up
+            view.setFloat32(56, 0.5, true);               // speed_accuracy (m/s)
+
+            return new Uint8Array(buffer);
+        }
+
+        /**
+         * ============================================================================
+         * 5. ISO BMFF (MP4) バイナリパーサー ＆ CAMM トラックインジェクタ
+         * ============================================================================
+         */
+        class Mp4BoxBuilder {
+            static strToBytes(str) {
+                const arr = new Uint8Array(str.length);
+                for (let i = 0; i < str.length; i++) arr[i] = str.charCodeAt(i);
+                return arr;
+            }
+
+            static concat(arrays) {
+                let totalLen = 0;
+                for (const a of arrays) totalLen += a.byteLength;
+                const res = new Uint8Array(totalLen);
+                let offset = 0;
+                for (const a of arrays) {
+                    res.set(a, offset);
+                    offset += a.byteLength;
+                }
+                return res;
+            }
+
+            static box(type, ...payloads) {
+                const body = Mp4BoxBuilder.concat(payloads);
+                const size = 8 + body.byteLength;
+                const header = new Uint8Array(8);
+                const view = new DataView(header.buffer);
+                view.setUint32(0, size, false);
+                header.set(Mp4BoxBuilder.strToBytes(type), 4);
+                return Mp4BoxBuilder.concat([header, body]);
+            }
+
+            static fullBox(type, version, flags, ...payloads) {
+                const vf = new Uint8Array(4);
+                const view = new DataView(vf.buffer);
+                view.setUint32(0, ((version & 0xff) << 24) | (flags & 0xffffff), false);
+                return Mp4BoxBuilder.box(type, vf, ...payloads);
+            }
+
+            static u32(val) {
+                const b = new Uint8Array(4);
+                new DataView(b.buffer).setUint32(0, val, false);
+                return b;
+            }
+
+            static u16(val) {
+                const b = new Uint8Array(2);
+                new DataView(b.buffer).setUint16(0, val, false);
+                return b;
+            }
+        }
+
+        /**
+         * トップレベルボックスを走査するパーサー
+         */
+        function parseTopLevelBoxes(buffer) {
+            const view = new DataView(buffer);
+            const boxes = [];
+            let offset = 0;
+            while (offset + 8 <= buffer.byteLength) {
+                let size = view.getUint32(offset, false);
+                const type = String.fromCharCode(
+                    view.getUint8(offset + 4),
+                    view.getUint8(offset + 5),
+                    view.getUint8(offset + 6),
+                    view.getUint8(offset + 7)
+                );
+                let headerSize = 8;
+                if (size === 1) {
+                    // 64-bit extended size
+                    if (offset + 16 > buffer.byteLength) break;
+                    const high = view.getUint32(offset + 8, false);
+                    const low = view.getUint32(offset + 12, false);
+                    size = high * 4294967296 + low;
+                    headerSize = 16;
+                } else if (size === 0) {
+                    size = buffer.byteLength - offset;
+                }
+                if (size < headerSize || offset + size > buffer.byteLength) break;
+
+                boxes.push({
+                    type,
+                    offset,
+                    size,
+                    headerSize,
+                    dataOffset: offset + headerSize,
+                    dataSize: size - headerSize
+                });
+                offset += size;
+            }
+            return boxes;
+        }
+
+        /**
+         * moov 内の既存トラックの チャンクオフセット (stco / co64) をシフト補正し、
+         * かつ mvhd の next_track_ID を取得・更新する
+         */
+        function patchMoovOffsetsAndGetNextTrackId(moovBytes, deltaOffset) {
+            const result = new Uint8Array(moovBytes); // コピーを作成
+            const view = new DataView(result.buffer);
+            let maxTrackId = 1;
+
+            function walk(start, end) {
+                let pos = start;
+                while (pos + 8 <= end) {
+                    const size = view.getUint32(pos, false);
+                    if (size < 8 || pos + size > end) break;
+                    const type = String.fromCharCode(
+                        view.getUint8(pos + 4),
+                        view.getUint8(pos + 5),
+                        view.getUint8(pos + 6),
+                        view.getUint8(pos + 7)
+                    );
+
+                    // コンテナボックスは再帰走査
+                    if (['trak', 'mdia', 'minf', 'stbl', 'edts', 'udta'].includes(type)) {
+                        walk(pos + 8, pos + size);
+                    } else if (type === 'tkhd') {
+                        const version = view.getUint8(pos + 8);
+                        const trackId = version === 1
+                            ? view.getUint32(pos + 28, false)
+                            : view.getUint32(pos + 20, false);
+                        if (trackId >= maxTrackId) maxTrackId = trackId + 1;
+                    } else if (type === 'mvhd') {
+                        const version = view.getUint8(pos + 8);
+                        const nextIdPos = version === 1 ? pos + 116 : pos + 104;
+                        if (nextIdPos + 4 <= pos + size) {
+                            const curNext = view.getUint32(nextIdPos, false);
+                            if (curNext > maxTrackId) maxTrackId = curNext;
+                        }
+                    } else if (type === 'stco' && deltaOffset !== 0) {
+                        const entryCount = view.getUint32(pos + 12, false);
+                        for (let i = 0; i < entryCount; i++) {
+                            const entryPos = pos + 16 + i * 4;
+                            const oldOff = view.getUint32(entryPos, false);
+                            view.setUint32(entryPos, oldOff + deltaOffset, false);
+                        }
+                    } else if (type === 'co64' && deltaOffset !== 0) {
+                        const entryCount = view.getUint32(pos + 12, false);
+                        for (let i = 0; i < entryCount; i++) {
+                            const entryPos = pos + 16 + i * 8;
+                            const high = view.getUint32(entryPos, false);
+                            const low = view.getUint32(entryPos + 4, false);
+                            const val = high * 4294967296 + low + deltaOffset;
+                            view.setUint32(entryPos, Math.floor(val / 4294967296), false);
+                            view.setUint32(entryPos + 4, val >>> 0, false);
+                        }
+                    }
+                    pos += size;
+                }
+            }
+
+            walk(8, result.byteLength);
+
+            // mvhd の next_track_ID を更新
+            let pos = 8;
+            while (pos + 8 <= result.byteLength) {
+                const size = view.getUint32(pos, false);
+                const type = String.fromCharCode(
+                    view.getUint8(pos + 4),
+                    view.getUint8(pos + 5),
+                    view.getUint8(pos + 6),
+                    view.getUint8(pos + 7)
+                );
+                if (type === 'mvhd') {
+                    const version = view.getUint8(pos + 8);
+                    const nextIdPos = version === 1 ? pos + 116 : pos + 104;
+                    if (nextIdPos + 4 <= pos + size) {
+                        view.setUint32(nextIdPos, maxTrackId + 1, false);
+                    }
+                    break;
+                }
+                pos += size;
+            }
+
+            return { patchedMoov: result, newTrackId: maxTrackId };
+        }
+
+        /**
+         * 新規 CAMM メタデータトラック ('trak' ボックス) を構築
+         */
+        function buildCammTrakBox(trackId, samples, cammDataStartOffset) {
+            const B = Mp4BoxBuilder;
+            const timescale = 1000; // 1ms精度
+            const totalDurationMs = Math.round(
+                samples.reduce((acc, s) => acc + s.durationSec * timescale, 0)
+            );
+
+            // 1. tkhd (Track Header Box - 92 bytes)
+            const tkhdBody = new Uint8Array(80);
+            const tkhdView = new DataView(tkhdBody.buffer);
+            tkhdView.setUint32(0, 0, false);               // creation_time
+            tkhdView.setUint32(4, 0, false);               // modification_time
+            tkhdView.setUint32(8, trackId, false);         // track_ID
+            tkhdView.setUint32(12, 0, false);              // reserved
+            tkhdView.setUint32(16, totalDurationMs, false);// duration
+            // unity matrix (offset 36..71)
+            tkhdView.setUint32(36, 0x00010000, false);
+            tkhdView.setUint32(52, 0x00010000, false);
+            tkhdView.setUint32(68, 0x40000000, false);
+            const tkhd = B.fullBox('tkhd', 0, 0x000003, tkhdBody); // enabled | in_movie
+
+            // 2. mdhd (Media Header Box - 32 bytes)
+            const mdhdBody = new Uint8Array(20);
+            const mdhdView = new DataView(mdhdBody.buffer);
+            mdhdView.setUint32(0, 0, false);               // creation_time
+            mdhdView.setUint32(4, 0, false);               // modification_time
+            mdhdView.setUint32(8, timescale, false);       // timescale (1000)
+            mdhdView.setUint32(12, totalDurationMs, false);// duration
+            mdhdView.setUint16(16, 0x55c4, false);         // language ('und')
+            const mdhd = B.fullBox('mdhd', 0, 0, mdhdBody);
+
+            // 3. hdlr (Handler Reference Box - 'meta' / 'Camera Motion Metadata')
+            const hdlrFixed = new Uint8Array(20);
+            hdlrFixed.set(B.strToBytes('meta'), 4); // handler_type = 'meta'
+            const hdlrName = B.strToBytes('Camera Motion Metadata\0');
+            const hdlr = B.fullBox('hdlr', 0, 0, hdlrFixed, hdlrName);
+
+            // 4. minf -> nmhd + dinf(dref) + stbl
+            const nmhd = B.fullBox('nmhd', 0, 0);
+            const urlBox = B.fullBox('url ', 0, 0x000001); // self-contained flag
+            const dref = B.fullBox('dref', 0, 0, B.u32(1), urlBox);
+            const dinf = B.box('dinf', dref);
+
+            // 5. stsd (Sample Description Box with 'camm' SampleEntry)
+            const cammEntryHeader = new Uint8Array(8);
+            new DataView(cammEntryHeader.buffer).setUint16(6, 1, false); // data_reference_index = 1
+            const cammEntry = B.box('camm', cammEntryHeader);
+            const stsd = B.fullBox('stsd', 0, 0, B.u32(1), cammEntry);
+
+            // 6. stts (Decoding Time to Sample Box) - ランレングス圧縮
+            const sttsEntries = [];
+            for (const s of samples) {
+                const delta = Math.max(1, Math.round(s.durationSec * timescale));
+                if (sttsEntries.length > 0 && sttsEntries[sttsEntries.length - 1].delta === delta) {
+                    sttsEntries[sttsEntries.length - 1].count++;
+                } else {
+                    sttsEntries.push({ count: 1, delta });
+                }
+            }
+            const sttsBuf = new Uint8Array(4 + sttsEntries.length * 8);
+            const sttsView = new DataView(sttsBuf.buffer);
+            sttsView.setUint32(0, sttsEntries.length, false);
+            sttsEntries.forEach((e, i) => {
+                sttsView.setUint32(4 + i * 8, e.count, false);
+                sttsView.setUint32(8 + i * 8, e.delta, false);
+            });
+            const stts = B.fullBox('stts', 0, 0, sttsBuf);
+
+            // 7. stsc (Sample To Chunk Box) - 全サンプルを1つの連続チャンクに格納
+            const stscBuf = new Uint8Array(16);
+            const stscView = new DataView(stscBuf.buffer);
+            stscView.setUint32(0, 1, false);              // entry_count = 1
+            stscView.setUint32(4, 1, false);              // first_chunk = 1
+            stscView.setUint32(8, samples.length, false); // samples_per_chunk
+            stscView.setUint32(12, 1, false);             // sample_description_index = 1
+            const stsc = B.fullBox('stsc', 0, 0, stscBuf);
+
+            // 8. stsz (Sample Size Box) - 各サンプル固定60バイト
+            const stszBuf = new Uint8Array(8);
+            const stszView = new DataView(stszBuf.buffer);
+            stszView.setUint32(0, 60, false);             // sample_size = 60 (uniform)
+            stszView.setUint32(4, samples.length, false); // sample_count
+            const stsz = B.fullBox('stsz', 0, 0, stszBuf);
+
+            // 9. stco / co64 (Chunk Offset Box)
+            let stco;
+            if (cammDataStartOffset <= 0xffffffff) {
+                const stcoBuf = new Uint8Array(8);
+                const stcoView = new DataView(stcoBuf.buffer);
+                stcoView.setUint32(0, 1, false); // entry_count = 1
+                stcoView.setUint32(4, cammDataStartOffset >>> 0, false);
+                stco = B.fullBox('stco', 0, 0, stcoBuf);
+            } else {
+                const co64Buf = new Uint8Array(12);
+                const co64View = new DataView(co64Buf.buffer);
+                co64View.setUint32(0, 1, false);
+                co64View.setUint32(4, Math.floor(cammDataStartOffset / 4294967296), false);
+                co64View.setUint32(8, cammDataStartOffset >>> 0, false);
+                stco = B.fullBox('co64', 0, 0, co64Buf);
+            }
+
+            const stbl = B.box('stbl', stsd, stts, stsc, stsz, stco);
+            const minf = B.box('minf', nmhd, dinf, stbl);
+            const mdia = B.box('mdia', mdhd, hdlr, minf);
+            return B.box('trak', tkhd, mdia);
+        }
+
+        /**
+         * MP4ファイルを読み込み、CAMMメタデータトラックを注入して新しいBlobを返す
+         */
+        async function generateCammMp4Blob(mp4File, samples, onProgress) {
+            onProgress('MP4コンテナをメモリに読み込み中...', 15);
+            const arrayBuffer = await mp4File.arrayBuffer();
+            const rawBytes = new Uint8Array(arrayBuffer);
+
+            onProgress('ISO BMFF ボックス構造を解析中...', 35);
+            const topBoxes = parseTopLevelBoxes(arrayBuffer);
+            const moovBox = topBoxes.find(b => b.type === 'moov');
+            if (!moovBox) {
+                throw new Error('有効なMP4ファイルではありません (moovボックスが見つかりません)。');
+            }
+
+            onProgress(`${samples.length} 個のCAMM Type 6パケットをエンコード中...`, 55);
+            const cammPackets = samples.map(s => encodeCammType6Packet(s));
+            const cammPayload = Mp4BoxBuilder.concat(cammPackets);
+            // CAMMデータを格納する新規 mdat ボックス (8バイトヘッダ + ペイロード)
+            const cammMdatBox = Mp4BoxBuilder.box('mdat', cammPayload);
+
+            onProgress('トラックテーブルとチャンクオフセットを再計算中...', 75);
+            const origMoovBytes = rawBytes.subarray(moovBox.offset, moovBox.offset + moovBox.size);
+
+            // まずダミーオフセットで trak ボックスのサイズを確定させる
+            const { patchedMoov: tempMoov, newTrackId } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, 0);
+            const dummyTrak = buildCammTrakBox(newTrackId, samples, 0);
+            const newMoovSize = tempMoov.byteLength + dummyTrak.byteLength;
+            const moovSizeDelta = newMoovSize - moovBox.size;
+
+            // moov が mdat より前に配置されている場合、既存メディアの stco/co64 を moovSizeDelta 分だけシフトする
+            const mdatBeforeMoov = topBoxes.some(b => b.type === 'mdat' && b.offset < moovBox.offset);
+            const mediaOffsetShift = mdatBeforeMoov ? 0 : moovSizeDelta;
+
+            const { patchedMoov } = patchMoovOffsetsAndGetNextTrackId(origMoovBytes, mediaOffsetShift);
+
+            // 最終ファイル構成: [moov以外の全ボックス(拡張されたmoov含む)] + [新規 cammMdatBox]
+            // そのため cammMdatBox のデータ開始位置は (元のファイル総サイズ + moovSizeDelta + 8)
+            const cammMdatDataOffset = rawBytes.byteLength + moovSizeDelta + 8;
+            const finalCammTrak = buildCammTrakBox(newTrackId, samples, cammMdatDataOffset);
+
+            // 拡張された moov ボックスの組み立て
+            const newMoovBody = Mp4BoxBuilder.concat([
+                patchedMoov.subarray(8),
+                finalCammTrak
+            ]);
+            const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
+
+            onProgress('CAMM MP4 バイナリを出力中...', 90);
+            const chunks = [];
+            for (const b of topBoxes) {
+                if (b.type === 'moov') {
+                    chunks.push(finalMoovBox);
+                } else {
+                    chunks.push(rawBytes.subarray(b.offset, b.offset + b.size));
+                }
+            }
+            chunks.push(cammMdatBox);
+
+            onProgress('完了しました！', 100);
+            return new Blob(chunks, { type: 'video/mp4' });
+        }
+
+        /**
+         * ============================================================================
+         * 6. サンプルデータ生成機能（GPX + テスト用合成MP4）
+         * ============================================================================
+         */
+        async function loadDemoData() {
+            try {
+                showToast('サンプルGPXとテスト用MP4を生成しています...', 'info');
+
+                // 1. 東京駅周辺〜皇居外苑を走行するリアルなサンプルGPXを生成 (30秒間)
+                const baseTime = new Date('2026-11-20T05:00:00Z');
+                const routeCoords = [
+                    [35.681236, 139.767125, 12.0],
+                    [35.681150, 139.765800, 12.5],
+                    [35.681050, 139.764400, 13.0],
+                    [35.680980, 139.763000, 13.2],
+                    [35.680900, 139.761600, 14.0],
+                    [35.680820, 139.760200, 14.5],
+                    [35.681500, 139.759800, 15.0],
+                    [35.682400, 139.759650, 15.2],
+                    [35.683300, 139.759500, 15.8],
+                    [35.684200, 139.759400, 16.0],
+                    [35.685100, 139.759300, 16.5],
+                    [35.686000, 139.759250, 17.0],
+                    [35.686900, 139.759350, 16.8],
+                    [35.687700, 139.759600, 16.2],
+                    [35.688400, 139.760100, 15.5],
+                    [35.689000, 139.760800, 15.0]
+                ];
+
+                let trkptsXml = '';
+                routeCoords.forEach((c, idx) => {
+                    const t = new Date(baseTime.getTime() + idx * 2000).toISOString();
+                    trkptsXml += `      <trkpt lat="${c[0]}" lon="${c[1]}"><ele>${c[2]}</ele><time>${t}</time></trkpt>\n`;
+                });
+
+                const gpxContent = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="CAMM MP4 Studio" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Tokyo Station Demo Route</name>
+    <trkseg>
+${trkptsXml}    </trkseg>
+  </trk>
+</gpx>`;
+                const gpxBlob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+                const gpxFile = new File([gpxBlob], 'tokyo_route_demo.gpx', { type: 'application/gpx+xml' });
+                await handleGpxFile(gpxFile);
+
+                // 2. Canvas + WebCodecs / MediaRecorder または有効な最小MP4コンテナを生成
+                // ブラウザ環境で確実に再生可能かつISO BMFF準拠のMP4を生成するためCanvas録画を使用
+                const mp4File = await createSyntheticMp4File(12);
+                await handleMp4File(mp4File);
+
+                // 初期同期デモ設定: GPXの3番目とMP4の2.0秒を同期ポイントに設定
+                setGpxStartIndex(2);
+                setTimeout(() => {
+                    el.videoPlayer.currentTime = 2.0;
+                    setVideoStartOffset(2.0);
+                    showToast('サンプルデータの準備が完了しました！地図や再生バーを動かして同期を試せます。', 'success');
+                }, 200);
+
+            } catch (err) {
+                console.error(err);
+                showToast('サンプルデータの生成中にエラーが発生しました: ' + err.message, 'error');
+            }
+        }
+
+        /**
+         * ブラウザのCanvasを使ってテスト用のMP4ファイルを生成するヘルパー
+         */
+        async function createSyntheticMp4File(durationSec = 10) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 360;
+            const ctx = canvas.getContext('2d');
+
+            // MediaRecorderがvideo/mp4をサポートしているか確認
+            const mimeTypes = [
+                'video/mp4;codecs=avc1',
+                'video/mp4',
+                'video/webm;codecs=vp9',
+                'video/webm'
+            ];
+            const supportedMime = mimeTypes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+
+            const stream = canvas.captureStream(30);
+            const recorder = new MediaRecorder(stream, supportedMime ? { mimeType: supportedMime } : undefined);
+            const chunks = [];
+
+            recorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) chunks.push(e.data);
+            };
+
+            let frame = 0;
+            const totalFrames = durationSec * 30;
+            const drawTimer = setInterval(() => {
+                const sec = frame / 30;
+                // 背景グラデーション
+                const grad = ctx.createLinearGradient(0, 0, 640, 360);
+                grad.addColorStop(0, '#0f172a');
+                grad.addColorStop(1, '#1e3a8a');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, 640, 360);
+
+                // 道路風の遠近グリッド線
+                ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+                ctx.lineWidth = 2;
+                const offset = (frame * 8) % 60;
+                for (let y = 180 + offset; y < 360; y += 60) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(640, y);
+                    ctx.stroke();
+                }
+
+                // タイムコードHUD描画
+                ctx.fillStyle = '#f8fafc';
+                ctx.font = 'bold 28px monospace';
+                ctx.fillText(`CAMM TEST FOOTAGE`, 30, 55);
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.font = 'bold 42px monospace';
+                ctx.fillText(`TIME: ${sec.toFixed(2)}s`, 30, 115);
+
+                if (sec >= 2.0 && sec < 2.5) {
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.font = 'bold 24px sans-serif';
+                    ctx.fillText(`★ SYNC POINT MARKER (2.00s)`, 30, 160);
+                }
+
+                frame++;
+                if (frame > totalFrames) {
+                    clearInterval(drawTimer);
+                    if (recorder.state !== 'inactive') recorder.stop();
+                }
+            }, 1000 / 30);
+
+            recorder.start();
+
+            await new Promise(resolve => {
+                recorder.onstop = resolve;
+            });
+
+            // もしブラウザのMediaRecorderがWebMしか出力しなかった場合でも、
+            // CAMMインジェクタがテストできるよう最小限の有効なISO BMFF(ftyp+moov+mdat)をフォールバック構築する
+            const recordedBlob = new Blob(chunks, { type: recordedBlobType(supportedMime) });
+            const buf = await recordedBlob.arrayBuffer();
+            const boxes = parseTopLevelBoxes(buf);
+            if (boxes.some(b => b.type === 'moov')) {
+                return new File([recordedBlob], 'dashcam_sample.mp4', { type: 'video/mp4' });
+            } else {
+                // WebMしか録画できないブラウザ向けの有効な最小ISO BMFF MP4フォールバック
+                const fallbackMp4 = buildMinimalValidMp4(durationSec);
+                return new File([fallbackMp4], 'synthetic_camm_base.mp4', { type: 'video/mp4' });
+            }
+        }
+
+        function recordedBlobType(mime) {
+            return mime && mime.includes('mp4') ? 'video/mp4' : 'video/webm';
+        }
+
+        /**
+         * MediaRecorderがMP4非対応のブラウザ向け: 規格準拠の最小MP4コンテナを生成
+         */
+        function buildMinimalValidMp4(durationSec) {
+            const B = Mp4BoxBuilder;
+            const ftyp = B.box('ftyp', B.strToBytes('isom'), B.u32(512), B.strToBytes('isomiso2mp41'));
+            const mvhdBody = new Uint8Array(96);
+            const mvhdView = new DataView(mvhdBody.buffer);
+            mvhdView.setUint32(8, 1000, false); // timescale
+            mvhdView.setUint32(12, durationSec * 1000, false);
+            mvhdView.setUint32(16, 0x00010000, false); // rate 1.0
+            mvhdView.setUint16(20, 0x0100, false); // volume 1.0
+            mvhdView.setUint32(32, 0x00010000, false);
+            mvhdView.setUint32(48, 0x00010000, false);
+            mvhdView.setUint32(64, 0x40000000, false);
+            mvhdView.setUint32(92, 1, false); // next_track_ID
+            const mvhd = B.fullBox('mvhd', 0, 0, mvhdBody);
+            const moov = B.box('moov', mvhd);
+            const mdat = B.box('mdat', new Uint8Array(64));
+            return new Blob([ftyp, moov, mdat], { type: 'video/mp4' });
+        }
+
+        /**
+         * ============================================================================
+         * 7. イベントリスナー登録
+         * ============================================================================
+         */
+        function setupEventListeners() {
+            // GPX ドラッグ＆ドロップ / クリック選択
+            el.dropZoneGpx.addEventListener('click', () => el.inputGpx.click());
+            el.inputGpx.addEventListener('change', (e) => handleGpxFile(e.target.files[0]));
+            setupDragAndDrop(el.dropZoneGpx, handleGpxFile);
+
+            // MP4 ドラッグ＆ドロップ / クリック選択
+            el.dropZoneMp4.addEventListener('click', () => el.inputMp4.click());
+            el.inputMp4.addEventListener('change', (e) => handleMp4File(e.target.files[0]));
+            setupDragAndDrop(el.dropZoneMp4, handleMp4File);
+
+            // 地図全体表示ボタン
+            el.btnFitMap.addEventListener('click', () => {
+                if (state.map && state.polyline) {
+                    state.map.fitBounds(state.polyline.getBounds(), { padding: [40, 40] });
+                }
+            });
+
+            // GPX スタート位置スライダー & 前後ボタン
+            el.sliderGpxStart.addEventListener('input', (e) => {
+                setGpxStartIndex(parseInt(e.target.value, 10));
+            });
+            el.btnGpxPrev.addEventListener('click', () => setGpxStartIndex(state.gpxStartIndex - 1));
+            el.btnGpxNext.addEventListener('click', () => setGpxStartIndex(state.gpxStartIndex + 1));
+
+            // 動画再生・シークバー操作
+            el.btnVideoPlayPause.addEventListener('click', () => {
+                if (el.videoPlayer.paused) {
+                    el.videoPlayer.play();
+                } else {
+                    el.videoPlayer.pause();
+                }
+            });
+
+            el.sliderVideoSeek.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                el.videoPlayer.currentTime = val;
+                el.videoCurrentTimeLabel.textContent = formatTime(val);
+                el.hudCurrentTime.textContent = formatTime(val);
+                updateSyncPreview();
+            });
+
+            el.btnFrameBack.addEventListener('click', () => {
+                el.videoPlayer.pause();
+                el.videoPlayer.currentTime = Math.max(0, el.videoPlayer.currentTime - 0.1);
+            });
+
+            el.btnFrameForward.addEventListener('click', () => {
+                el.videoPlayer.pause();
+                el.videoPlayer.currentTime = Math.min(state.mp4Duration, el.videoPlayer.currentTime + 0.1);
+            });
+
+            // 現在の動画再生位置をスタート位置に設定
+            el.btnSetVideoStart.addEventListener('click', () => {
+                const cur = el.videoPlayer.currentTime;
+                setVideoStartOffset(cur);
+                showToast(`MP4スタート位置を ${formatTime(cur)} に設定しました`, 'success');
+            });
+
+            // 指定済みスタート位置へジャンプ
+            el.btnJumpToVideoStart.addEventListener('click', () => {
+                el.videoPlayer.pause();
+                el.videoPlayer.currentTime = state.mp4StartOffset;
+            });
+
+            // 補間オプション変更時
+            el.chkInterpolate.addEventListener('change', updateSummaryMetrics);
+
+            // CAMM MP4 生成＆ダウンロード実行
+            el.btnGenerateCamm.addEventListener('click', async () => {
+                if (!state.mp4File || state.gpxPoints.length === 0) return;
+
+                try {
+                    el.btnGenerateCamm.disabled = true;
+                    el.progressContainer.classList.remove('hidden');
+
+                    const samples = buildCammSamples();
+                    if (samples.length === 0) {
+                        throw new Error('生成可能な有効CAMMサンプルがありません。スタート位置の設定を確認してください。');
+                    }
+
+                    const outBlob = await generateCammMp4Blob(state.mp4File, samples, (status, pct) => {
+                        el.progressStatus.textContent = status;
+                        el.progressPercent.textContent = `${pct}%`;
+                        el.progressBar.style.width = `${pct}%`;
+                    });
+
+                    // ファイルダウンロード発火
+                    const baseName = state.mp4File.name.replace(/\.mp4$/i, '');
+                    const outFileName = `${baseName}_camm.mp4`;
+                    const downloadUrl = URL.createObjectURL(outBlob);
+
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = outFileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+
+                    setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
+                    showToast(`CAMM形式MP4「${outFileName}」の生成・ダウンロードが完了しました！`, 'success');
+                } catch (err) {
+                    console.error(err);
+                    showToast(err.message || 'CAMM MP4の生成中にエラーが発生しました', 'error');
+                } finally {
+                    el.btnGenerateCamm.disabled = false;
+                    setTimeout(() => {
+                        el.progressContainer.classList.add('hidden');
+                        el.progressBar.style.width = '0%';
+                    }, 2500);
+                }
+            });
+
+            // サンプルデータ読込ボタン
+            el.btnLoadDemo.addEventListener('click', loadDemoData);
+
+            // ヘルプモーダル開閉
+            el.btnHelp.addEventListener('click', () => el.helpModal.classList.remove('hidden'));
+            el.btnCloseHelp.addEventListener('click', () => el.helpModal.classList.add('hidden'));
+            el.btnCloseHelpBottom.addEventListener('click', () => el.helpModal.classList.add('hidden'));
+            el.helpModal.addEventListener('click', (e) => {
+                if (e.target === el.helpModal) el.helpModal.classList.add('hidden');
+            });
+        }
+
+        function setupDragAndDrop(zoneEl, onFileCallback) {
+            ['dragenter', 'dragover'].forEach(evtName => {
+                zoneEl.addEventListener(evtName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    zoneEl.classList.add('border-sky-400', 'bg-slate-800/80');
+                });
+            });
+            ['dragleave', 'drop'].forEach(evtName => {
+                zoneEl.addEventListener(evtName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    zoneEl.classList.remove('border-sky-400', 'bg-slate-800/80');
+                });
+            });
+            zoneEl.addEventListener('drop', (e) => {
+                const file = e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file) onFileCallback(file);
+            });
+        }
+
+        // 初期化実行
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            setupEventListeners();
+        });
+    </script>
+</body>
+</html>
