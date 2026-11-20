@@ -177,7 +177,17 @@
                         <h3 class="font-semibold text-sm text-slate-100">GPX 軌跡マップ & スタート位置指定</h3>
                     </div>
                     <div class="flex items-center gap-2 text-xs">
-                        <span class="text-slate-400 hidden sm:inline">地図上の軌跡クリック または マーカーをドラッグ</span>
+                        <span class="text-slate-400 hidden xl:inline">軌跡クリック または マーカーをドラッグ</span>
+                        <div class="relative flex items-center">
+                            <i data-lucide="layers" class="w-3.5 h-3.5 text-emerald-400 absolute left-2.5 pointer-events-none"></i>
+                            <select id="selectMapLayer" class="pl-7 pr-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs focus:outline-none focus:border-sky-500 cursor-pointer" title="背景地図の切り替え">
+                                <option value="gsi_std">国土地理院 標準地図</option>
+                                <option value="gsi_pale">国土地理院 淡色地図</option>
+                                <option value="gsi_photo">国土地理院 航空写真</option>
+                                <option value="carto_dark">ダークマップ (Carto)</option>
+                                <option value="osm">OpenStreetMap</option>
+                            </select>
+                        </div>
                         <button id="btnFitMap" disabled class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 transition flex items-center gap-1">
                             <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
                             <span>全体表示</span>
@@ -480,6 +490,8 @@
             mp4StartOffset: 0,    // 動画内で指定されたスタート秒数
 
             map: null,
+            baseLayers: {},
+            currentBaseLayer: null,
             polyline: null,
             startMarker: null,    // 赤いスタート基準マーカー（ドラッグ可能）
             currentMarker: null,  // 青い現在再生位置プレビューマーカー
@@ -502,6 +514,7 @@
 
             mapEmptyOverlay: document.getElementById('mapEmptyOverlay'),
             mapLegend: document.getElementById('mapLegend'),
+            selectMapLayer: document.getElementById('selectMapLayer'),
             btnFitMap: document.getElementById('btnFitMap'),
             sliderGpxStart: document.getElementById('sliderGpxStart'),
             btnGpxPrev: document.getElementById('btnGpxPrev'),
@@ -604,14 +617,69 @@
                 attributionControl: true
             }).setView([35.681236, 139.767125], 13);
 
-            // ダークテーマに合うCartoDB Dark Matterタイル + OpenStreetMapフォールバック
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; OpenStreetMap &copy; CARTO',
-                subdomains: 'abcd',
-                maxZoom: 20
-            }).addTo(state.map);
+            // 背景地図レイヤー定義（国土地理院タイル・CartoDB・OpenStreetMap）
+            state.baseLayers = {
+                gsi_std: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>',
+                    maxZoom: 18
+                }),
+                gsi_pale: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>',
+                    maxZoom: 18
+                }),
+                gsi_photo: L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>',
+                    maxZoom: 18
+                }),
+                carto_dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; OpenStreetMap &copy; CARTO',
+                    subdomains: 'abcd',
+                    maxZoom: 20
+                }),
+                osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+                    maxZoom: 19
+                })
+            };
+
+            // デフォルトで国土地理院 標準地図を表示
+            state.currentBaseLayer = state.baseLayers.gsi_std;
+            state.currentBaseLayer.addTo(state.map);
+
+            // Leaflet標準のレイヤー切り替えコントロールも右上に追加
+            const layerControlLabels = {
+                '国土地理院 標準地図': state.baseLayers.gsi_std,
+                '国土地理院 淡色地図': state.baseLayers.gsi_pale,
+                '国土地理院 航空写真': state.baseLayers.gsi_photo,
+                'ダークマップ (Carto)': state.baseLayers.carto_dark,
+                'OpenStreetMap': state.baseLayers.osm
+            };
+            L.control.layers(layerControlLabels, null, { position: 'topright' }).addTo(state.map);
+
+            // 地図上のレイヤーコントロール変更時にヘッダーのセレクトボックスも同期
+            state.map.on('baselayerchange', (e) => {
+                state.currentBaseLayer = e.layer;
+                const matchedKey = Object.keys(state.baseLayers).find(k => state.baseLayers[k] === e.layer);
+                if (matchedKey && el.selectMapLayer.value !== matchedKey) {
+                    el.selectMapLayer.value = matchedKey;
+                }
+            });
 
             state.pointLayerGroup = L.layerGroup().addTo(state.map);
+        }
+
+        /**
+         * 背景地図レイヤーの切り替え
+         */
+        function switchBaseMapLayer(layerKey) {
+            const nextLayer = state.baseLayers[layerKey];
+            if (!nextLayer || !state.map || state.currentBaseLayer === nextLayer) return;
+
+            if (state.currentBaseLayer) {
+                state.map.removeLayer(state.currentBaseLayer);
+            }
+            nextLayer.addTo(state.map);
+            state.currentBaseLayer = nextLayer;
         }
 
         /**
@@ -1725,9 +1793,9 @@ ${trkptsXml}    </trkseg>
                 }
             });
 
-            // GPX スタート位置スライダー & 前後ボタン
-            el.sliderGpxStart.addEventListener('input', (e) => {
-                setGpxStartIndex(parseInt(e.target.value, 10));
+            // 背景地図切り替えセレクトボックス
+            el.selectMapLayer.addEventListener('change', (e) => {
+                switchBaseMapLayer(e.target.value);
             });
             el.btnGpxPrev.addEventListener('click', () => setGpxStartIndex(state.gpxStartIndex - 1));
             el.btnGpxNext.addEventListener('click', () => setGpxStartIndex(state.gpxStartIndex + 1));
