@@ -102,6 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1542</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -129,7 +130,7 @@
         <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- GPXファイルドロップゾーン -->
             <div id="dropZoneGpx" class="relative group rounded-2xl border-2 border-dashed border-slate-700/80 hover:border-emerald-500/60 bg-slate-900/50 p-5 transition-all cursor-pointer flex items-center justify-between gap-4">
-                <input type="file" id="inputGpx" accept=".gpx,application/gpx+xml,text/xml" class="hidden">
+                <input type="file" id="inputGpx" accept=".gpx,.xml,application/gpx+xml,text/xml,*/*" class="hidden">
                 <div class="flex items-center gap-4 min-w-0">
                     <div id="iconBoxGpx" class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 text-emerald-400 group-hover:scale-105 transition-transform">
                         <i data-lucide="map-pin" class="w-6 h-6"></i>
@@ -433,7 +434,8 @@
             <div class="flex items-center justify-between border-b border-slate-800 pb-3">
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
-                    CAMM MP4 Studio について
+                    <span>CAMM MP4 Studio について</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1542</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1777,13 +1779,29 @@ ${trkptsXml}    </trkseg>
          */
         function setupEventListeners() {
             // GPX ドラッグ＆ドロップ / クリック選択
-            el.dropZoneGpx.addEventListener('click', () => el.inputGpx.click());
-            el.inputGpx.addEventListener('change', (e) => handleGpxFile(e.target.files[0]));
+            el.inputGpx.addEventListener('click', (e) => e.stopPropagation());
+            el.dropZoneGpx.addEventListener('click', () => {
+                el.inputGpx.value = '';
+                el.inputGpx.click();
+            });
+            el.inputGpx.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    handleGpxFile(e.target.files[0]);
+                }
+            });
             setupDragAndDrop(el.dropZoneGpx, handleGpxFile);
 
             // MP4 ドラッグ＆ドロップ / クリック選択
-            el.dropZoneMp4.addEventListener('click', () => el.inputMp4.click());
-            el.inputMp4.addEventListener('change', (e) => handleMp4File(e.target.files[0]));
+            el.inputMp4.addEventListener('click', (e) => e.stopPropagation());
+            el.dropZoneMp4.addEventListener('click', () => {
+                el.inputMp4.value = '';
+                el.inputMp4.click();
+            });
+            el.inputMp4.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    handleMp4File(e.target.files[0]);
+                }
+            });
             setupDragAndDrop(el.dropZoneMp4, handleMp4File);
 
             // 地図全体表示ボタン
@@ -1796,6 +1814,11 @@ ${trkptsXml}    </trkseg>
             // 背景地図切り替えセレクトボックス
             el.selectMapLayer.addEventListener('change', (e) => {
                 switchBaseMapLayer(e.target.value);
+            });
+
+            // GPX スタートポイントスライダー操作
+            el.sliderGpxStart.addEventListener('input', (e) => {
+                setGpxStartIndex(parseInt(e.target.value, 10));
             });
             el.btnGpxPrev.addEventListener('click', () => setGpxStartIndex(state.gpxStartIndex - 1));
             el.btnGpxNext.addEventListener('click', () => setGpxStartIndex(state.gpxStartIndex + 1));
