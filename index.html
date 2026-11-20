@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1636</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1638</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -501,7 +501,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1636</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1638</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1661,6 +1661,27 @@
             ]);
             const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
 
+            onProgress('新しいMP4バイナリを結合中...', 90);
+            const outputChunks = [];
+            for (const box of topBoxes) {
+                if (box.type === 'moov') {
+                    outputChunks.push(finalMoovBox);
+                } else {
+                    outputChunks.push(rawBytes.subarray(box.offset, box.offset + box.size));
+                }
+            }
+            outputChunks.push(cammMdatBox);
+
+            onProgress('完了', 100);
+            return new Blob(outputChunks, { type: 'video/mp4' });
+        }
+
+        /**
+         * ============================================================================
+         * 6. UIイベントバインディング
+         * ============================================================================
+         */
+        function setupEventListeners() {
             // GPX ドラッグ＆ドロップ / クリック選択 (.gpx のみ許可)
             el.inputGpx.addEventListener('click', (e) => e.stopPropagation());
             el.dropZoneGpx.addEventListener('click', async () => {
