@@ -102,9 +102,9 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1638</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1731</span>
                     </h1>
-                    <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
+                    <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
             </div>
 
@@ -136,8 +136,8 @@
                             <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">STEP 1-A</span>
                             <span id="badgeGpxStatus" class="hidden text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-medium">読込完了</span>
                         </div>
-                        <h2 id="titleGpx" class="font-semibold text-slate-100 truncate mt-0.5">GPXファイルを選択 または ドロップ</h2>
-                        <p id="metaGpx" class="text-xs text-slate-400 truncate mt-0.5">緯度・経度・高度・タイムスタンプを含む .gpx</p>
+                        <h2 id="titleGpx" class="font-semibold text-slate-100 truncate mt-0.5">GPXファイル (.gpx) のみ選択 / ドロップ</h2>
+                        <p id="metaGpx" class="text-xs text-slate-400 truncate mt-0.5">緯度・経度・高度・タイムスタンプを含む .gpx 形式専用</p>
                     </div>
                 </div>
                 <span class="px-3 py-1.5 rounded-lg bg-slate-800 group-hover:bg-slate-700 text-xs font-medium text-slate-300 shrink-0 border border-slate-700">選択</span>
@@ -166,12 +166,12 @@
         <!-- ステップ2: 同期エディタ（地図 ＆ 動画プレイヤー） -->
         <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-            <!-- 左カラム: GPX地図＆スタート位置指定 (7カラム) -->
+            <!-- 左カラム: GPX地図＆基準位置指定 (7カラム) -->
             <div class="lg:col-span-7 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col shadow-xl">
                 <div class="px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 bg-slate-900/80">
                     <div class="flex items-center gap-2">
                         <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                        <h3 class="font-semibold text-sm text-slate-100">GPX 軌跡マップ & スタート位置指定</h3>
+                        <h3 class="font-semibold text-sm text-slate-100">GPX 軌跡マップ & 基準位置指定</h3>
                     </div>
                     <div class="flex items-center gap-2 text-xs">
                         <span class="text-slate-400 hidden xl:inline">軌跡クリック または マーカーをドラッグ</span>
@@ -202,14 +202,14 @@
                             <i data-lucide="map" class="w-7 h-7"></i>
                         </div>
                         <p class="text-sm font-medium text-slate-300">GPXファイルが読み込まれていません</p>
-                        <p class="text-xs text-slate-500 mt-1 max-w-xs">GPXファイルを読み込むとここにルートが表示され、スタート位置のアイコンを自由に配置できます。</p>
+                        <p class="text-xs text-slate-500 mt-1 max-w-xs">GPXファイルを読み込むとここにルートが表示され、同期の基準位置アイコンを自由に配置できます。</p>
                     </div>
 
                     <!-- 凡例バッジ -->
                     <div id="mapLegend" class="hidden absolute bottom-3 left-3 z-20 bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-xl px-3 py-2 text-xs space-y-1.5 shadow-lg">
                         <div class="flex items-center gap-2">
                             <span class="w-3 h-3 rounded-full bg-rose-500 border-2 border-white inline-block"></span>
-                            <span class="text-slate-200 font-medium">GPX スタート基準点 (ドラッグ可)</span>
+                            <span class="text-slate-200 font-medium">GPX 同期基準位置 (ドラッグ可)</span>
                         </div>
                         <div class="flex items-center gap-2">
                             <span class="w-3 h-3 rounded-full bg-sky-400 border-2 border-white inline-block"></span>
@@ -223,18 +223,18 @@
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
                             <span class="text-xs font-medium text-rose-400 flex items-center gap-1">
-                                <i data-lucide="flag" class="w-3.5 h-3.5"></i>
-                                GPXスタート位置:
+                                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+                                GPX 基準位置:
                             </span>
                             <span id="gpxStartPointLabel" class="font-mono text-xs bg-slate-900 px-2.5 py-1 rounded border border-slate-700 text-slate-200">
                                 -- / --
                             </span>
                         </div>
                         <div class="flex items-center gap-1.5">
-                            <button id="btnGpxPrev" disabled class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200" title="1ポイント前へ">
+                            <button id="btnGpxPrev" disabled class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 transition" title="1ポイント前へ">
                                 <i data-lucide="chevron-left" class="w-4 h-4"></i>
                             </button>
-                            <button id="btnGpxNext" disabled class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 border border-slate-700 text-slate-200" title="1ポイント次へ">
+                            <button id="btnGpxNext" disabled class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 transition" title="1ポイント次へ">
                                 <i data-lucide="chevron-right" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -263,12 +263,12 @@
                 </div>
             </div>
 
-            <!-- 右カラム: MP4動画プレイヤー＆スタート位置指定 (5カラム) -->
+            <!-- 右カラム: MP4動画プレイヤー＆基準位置指定 (5カラム) -->
             <div class="lg:col-span-5 rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col shadow-xl">
                 <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/80">
                     <div class="flex items-center gap-2">
                         <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-                        <h3 class="font-semibold text-sm text-slate-100">MP4 プレビュー & スタート位置指定</h3>
+                        <h3 class="font-semibold text-sm text-slate-100">MP4 プレビュー & 基準位置指定</h3>
                     </div>
                     <span id="videoResolutionBadge" class="text-[11px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">-- x --</span>
                 </div>
@@ -283,7 +283,7 @@
                             <i data-lucide="video" class="w-7 h-7"></i>
                         </div>
                         <p class="text-sm font-medium text-slate-300">MP4ファイルが読み込まれていません</p>
-                        <p class="text-xs text-slate-500 mt-1 max-w-xs">MP4動画を読み込むと、再生バーからGPXと同期させる開始フレームを指定できます。</p>
+                        <p class="text-xs text-slate-500 mt-1 max-w-xs">MP4動画を読み込むと、再生バーからGPXと連結させる基準位置を指定できます。</p>
                     </div>
 
                     <!-- 同期ステータスオーバーレイHUD -->
@@ -327,33 +327,33 @@
                             </button>
                         </div>
 
-                        <!-- 現在の再生位置をスタート位置として固定するボタン -->
+                        <!-- 現在の再生位置を基準位置として固定するボタン -->
                         <button id="btnSetVideoStart" disabled class="px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-40 text-amber-300 border border-amber-500/40 font-semibold text-xs flex items-center gap-1.5 transition">
                             <i data-lucide="pin" class="w-3.5 h-3.5"></i>
-                            <span>現在位置をスタートに設定</span>
+                            <span>現在位置を基準に設定</span>
                         </button>
                     </div>
 
-                    <!-- 指定された動画スタート位置情報 -->
+                    <!-- 指定された動画基準位置情報 -->
                     <div class="bg-slate-900 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
                         <div>
                             <div class="text-[11px] text-slate-400 flex items-center gap-1.5">
                                 <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                                指定済み MP4 スタート位置
+                                指定済み MP4 基準位置
                             </div>
                             <div id="videoStartOffsetDisplay" class="font-mono text-sm font-semibold text-amber-300 mt-0.5">
                                 00:00.000 (0.000 秒)
                             </div>
                         </div>
                         <button id="btnJumpToVideoStart" disabled class="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 border border-slate-700 transition">
-                            スタート位置へ移動
+                            基準位置へ移動
                         </button>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- ステップ3: 同期マッピング確認 & CAMM MP4 生成・出力パネル -->
+        <!-- ステップ3: 基準位置連結確認 & CAMM MP4 生成・出力パネル -->
         <section class="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border border-slate-800 p-5 sm:p-6 shadow-xl">
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
 
@@ -361,25 +361,25 @@
                 <div class="space-y-3 flex-1">
                     <div class="flex items-center gap-2">
                         <span class="text-xs font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">STEP 3</span>
-                        <h3 class="font-bold text-base sm:text-lg text-slate-100">同期マッピング & CAMM MP4 エクスポート</h3>
+                        <h3 class="font-bold text-base sm:text-lg text-slate-100">基準位置ベースのCAMM連結 & エクスポート</h3>
                     </div>
 
                     <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                        指定した <span class="text-amber-300 font-medium">MP4スタート位置</span> と <span class="text-rose-400 font-medium">GPXスタート基準点</span> を時間軸上で一致させ、動画全編に対応する <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-sky-300">camm</code> (Camera Motion Metadata) トラックをMP4コンテナに追記・再構築します。
+                        指定した <span class="text-amber-300 font-medium">MP4基準位置</span> と <span class="text-rose-400 font-medium">GPX基準位置</span> を同期アンカーとして一致させ、前後（マイナス・プラス双方）の時間差分にもとづいて動画全編へ <code class="text-xs bg-slate-800 px-1.5 py-0.5 rounded text-sky-300">camm</code> メタデータトラックを連結・出力します。
                     </p>
 
                     <!-- 同期計算メトリクス -->
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
                         <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
-                            <div class="text-[11px] text-slate-500">MP4 開始オフセット</div>
+                            <div class="text-[11px] text-slate-500">MP4 基準位置</div>
                             <div id="summaryMp4Start" class="font-mono text-sm font-semibold text-amber-300 mt-0.5">--.-- s</div>
                         </div>
                         <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
-                            <div class="text-[11px] text-slate-500">GPX 開始インデックス</div>
+                            <div class="text-[11px] text-slate-500">GPX 基準位置</div>
                             <div id="summaryGpxStart" class="font-mono text-sm font-semibold text-rose-400 mt-0.5">#--</div>
                         </div>
                         <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
-                            <div class="text-[11px] text-slate-500">紐づけ有効サンプル数</div>
+                            <div class="text-[11px] text-slate-500">連結CAMMサンプル数</div>
                             <div id="summaryMatchedSamples" class="font-mono text-sm font-semibold text-emerald-400 mt-0.5">0 サンプル</div>
                         </div>
                         <div class="bg-slate-950/70 rounded-xl p-3 border border-slate-800/90">
@@ -501,7 +501,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1638</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1731</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -514,10 +514,10 @@
                 <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
                     <div class="font-semibold text-slate-200">操作手順：</div>
                     <ol class="list-decimal list-inside space-y-1 text-slate-400">
-                        <li><strong class="text-emerald-400">GPXファイル</strong> と <strong class="text-sky-400">MP4ファイル</strong> をそれぞれ読み込みます。</li>
-                        <li>地図上の赤いスタートアイコンをドラッグ（または軌跡をクリック）して、基準となる位置を指定します。</li>
-                        <li>動画の再生バーを動かし、地図の基準点と一致する場面で「現在位置をスタートに設定」を押します。</li>
-                        <li>「CAMM MP4 を生成・ダウンロード」を押すと、映像を再エンコードせず高速にメタデータトラックを埋め込んで出力します。</li>
+                        <li><strong class="text-emerald-400">GPXファイル (.gpx)</strong> と <strong class="text-sky-400">MP4ファイル (.mp4)</strong> をそれぞれ読み込みます。</li>
+                        <li>地図上の赤い基準アイコンをドラッグ（または軌跡をクリック）して、同期の基準となる位置を指定します。</li>
+                        <li>動画の再生バーを動かし、地図の基準位置と一致する場面で「現在位置を基準に設定」を押します。</li>
+                        <li>基準位置を起点に前後方向へ時間軸を連結し、CAMM形式MP4として出力します。</li>
                     </ol>
                 </div>
                 <p class="text-xs text-slate-400">
@@ -736,7 +736,7 @@
             };
             L.control.layers(layerControlLabels, null, { position: 'topright' }).addTo(state.map);
 
-            // 地図上のレイヤーコントロール変更時にヘッダーのセレクトボックスも同期
+            // Leafletのコントロールから背景地図を変更した際にセレクトボックスも同期
             state.map.on('baselayerchange', (e) => {
                 state.currentBaseLayer = e.layer;
                 const matchedKey = Object.keys(state.baseLayers).find(k => state.baseLayers[k] === e.layer);
@@ -808,29 +808,14 @@
                 lineJoin: 'round'
             }).addTo(state.map);
 
-            // ポリラインクリックでその地点をスタート位置に指定可能にする
+            // ポリラインクリックでその地点を基準位置に指定可能にする
             state.polyline.on('click', (e) => {
                 const idx = findNearestGpxPointIndex(e.latlng);
                 setGpxStartIndex(idx);
-                showToast(`地図上のクリック位置 (Point #${idx + 1}) をGPXスタート位置に設定しました`, 'info');
+                showToast(`地図上のクリック位置 (Point #${idx + 1}) をGPX基準位置に設定しました`, 'info');
             });
 
-            // トラックポイントが多い場合は間引いてクリック可能な小円を描画
-            const step = Math.max(1, Math.floor(state.gpxPoints.length / 250));
-            for (let i = 0; i < state.gpxPoints.length; i += step) {
-                const pt = state.gpxPoints[i];
-                const circle = L.circleMarker([pt.lat, pt.lon], {
-                    radius: 4,
-                    color: '#34d399',
-                    fillColor: '#064e3b',
-                    fillOpacity: 0.8,
-                    weight: 1.5
-                });
-                circle.on('click', () => setGpxStartIndex(i));
-                state.pointLayerGroup.addLayer(circle);
-            }
-
-            // 赤いスタート基準マーカー（ドラッグ可能）
+            // 赤い基準位置マーカー（ドラッグ可能）
             const startIcon = L.divIcon({
                 className: 'custom-start-icon',
                 html: `<div class="relative w-6 h-6 -ml-3 -mt-3 rounded-full bg-rose-500 border-2 border-white shadow-lg flex items-center justify-center marker-pulse cursor-grab active:cursor-grabbing">
@@ -846,7 +831,7 @@
                 zIndexOffset: 1000
             }).addTo(state.map);
 
-            state.startMarker.bindTooltip('ドラッグしてGPXスタート位置を指定', {
+            state.startMarker.bindTooltip('ドラッグしてGPX基準位置を指定', {
                 direction: 'top',
                 offset: [0, -12]
             });
@@ -860,7 +845,7 @@
             state.startMarker.on('dragend', (e) => {
                 const idx = findNearestGpxPointIndex(e.target.getLatLng());
                 setGpxStartIndex(idx);
-                showToast(`GPXスタート位置を Point #${idx + 1} にスナップしました`, 'success');
+                showToast(`GPX基準位置を Point #${idx + 1} にスナップしました`, 'success');
             });
 
             // 青い動画再生位置プレビューマーカー
@@ -1171,15 +1156,14 @@
                 state.currentMarker.setLatLng([interp.lat, interp.lon]);
             }
 
-            if (curVideoTime < state.mp4StartOffset) {
-                el.hudSyncBadge.textContent = `BEFORE START (-${(state.mp4StartOffset - curVideoTime).toFixed(2)}s)`;
-                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-amber-950/90 text-amber-300 border border-amber-500/40 backdrop-blur';
-            } else if (interp && interp.inRange) {
-                el.hudSyncBadge.textContent = `SYNCED (+${(curVideoTime - state.mp4StartOffset).toFixed(2)}s)`;
+            const diffFromAnchor = curVideoTime - state.mp4StartOffset;
+            const sign = diffFromAnchor >= 0 ? '+' : '';
+            if (interp && interp.inRange) {
+                el.hudSyncBadge.textContent = `ANCHOR LINKED (${sign}${diffFromAnchor.toFixed(2)}s)`;
                 el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-emerald-950/90 text-emerald-300 border border-emerald-500/40 backdrop-blur';
             } else {
-                el.hudSyncBadge.textContent = `GPX END REACHED`;
-                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-slate-900/90 text-slate-400 border border-slate-700 backdrop-blur';
+                el.hudSyncBadge.textContent = `GPX BOUNDARY (${sign}${diffFromAnchor.toFixed(2)}s)`;
+                el.hudSyncBadge.className = 'px-2.5 py-1 rounded-md text-[11px] font-mono font-semibold bg-amber-950/90 text-amber-300 border border-amber-500/40 backdrop-blur';
             }
         }
 
@@ -1252,8 +1236,8 @@
         }
 
         /**
-         * 同期設定に基づき、動画タイムライン (0 〜 mp4Duration) にマッピングされた
-         * CAMM Type 6 サンプル配列を生成する
+         * 基準位置（同期アンカー）にもとづき、動画タイムライン (0 〜 mp4Duration) の前後双方向に
+         * 連結された CAMM Type 6 サンプル配列を生成する
          */
         function buildCammSamples() {
             const duration = state.mp4Duration || 10;
@@ -1261,23 +1245,23 @@
             const stepSec = interpolate ? 0.1 : 1.0; // 10Hz または 1Hz
             const samples = [];
 
-            const startGpxPt = state.gpxPoints[state.gpxStartIndex];
-            const baseUnixMs = startGpxPt.time ? startGpxPt.time.getTime() : Date.now();
+            const anchorGpxPt = state.gpxPoints[state.gpxStartIndex];
+            const anchorUnixMs = anchorGpxPt.time ? anchorGpxPt.time.getTime() : Date.now();
 
-            // 動画の 0秒 から終了までサンプルを生成
-            // 動画スタート位置(mp4StartOffset)より前の区間はGPXスタート地点の座標をホールド
+            // 動画の 0秒 から終了まで、基準位置 (mp4StartOffset <-> gpxStartIndex) を原点として前後双方向に連結
             for (let t = 0; t < duration; t += stepSec) {
                 const sampleDuration = Math.min(stepSec, duration - t);
                 if (sampleDuration <= 0.001) break;
 
-                const effectiveVideoTime = Math.max(state.mp4StartOffset, t);
-                const pt = getInterpolatedGpxAtVideoTime(effectiveVideoTime);
-                const nextPt = getInterpolatedGpxAtVideoTime(effectiveVideoTime + stepSec);
+                // 基準位置からの相対時間（基準より前はマイナス、基準より後はプラス）
+                const deltaFromAnchorSec = t - state.mp4StartOffset;
+                const pt = getInterpolatedGpxAtVideoTime(t);
+                const nextPt = getInterpolatedGpxAtVideoTime(t + stepSec);
 
                 if (!pt) continue;
 
                 const vel = nextPt ? computeVelocityComponents(pt, nextPt, stepSec) : { ve: 0, vn: 0, vu: 0 };
-                const currentUnixMs = baseUnixMs + (effectiveVideoTime - state.mp4StartOffset) * 1000;
+                const currentUnixMs = anchorUnixMs + deltaFromAnchorSec * 1000;
                 const gpsTimeSec = (currentUnixMs - GPS_EPOCH_UNIX_MS) / 1000.0 + GPS_LEAP_SECONDS;
 
                 samples.push({
@@ -1682,28 +1666,31 @@
          * ============================================================================
          */
         function setupEventListeners() {
-            // GPX ドラッグ＆ドロップ / クリック選択 (.gpx のみ許可)
+            // GPX ドラッグ＆ドロップ / クリック選択 (.gpx のみ厳格に許可)
             el.inputGpx.addEventListener('click', (e) => e.stopPropagation());
             el.dropZoneGpx.addEventListener('click', async () => {
-                // File System Access API の showOpenFilePicker が使える通常ウィンドウでは .gpx のみフィルタを強制
-                const isInIframe = window.self !== window.top;
-                if (typeof window.showOpenFilePicker === 'function' && !isInIframe) {
+                // File System Access API の showOpenFilePicker が使える場合は .gpx 拡張子のみを表示・選択可能にする
+                if (typeof window.showOpenFilePicker === 'function') {
                     try {
                         const [handle] = await window.showOpenFilePicker({
                             multiple: false,
                             excludeAcceptAllOption: true,
                             types: [{
-                                description: 'GPX Track File (*.gpx)',
-                                accept: { 'application/gpx+xml': ['.gpx'] }
+                                description: 'GPXファイル (*.gpx)',
+                                accept: {
+                                    'application/gpx+xml': ['.gpx'],
+                                    'text/xml': ['.gpx']
+                                }
                             }]
                         });
                         if (handle) {
                             const file = await handle.getFile();
-                            handleGpxFile(file);
+                            await handleGpxFile(file);
                         }
                         return;
                     } catch (err) {
-                        if (err.name === 'AbortError') return;
+                        if (err.name === 'AbortError') return; // ユーザーキャンセル時は何もしない
+                        // iframe等のセキュリティ制限でブロックされた場合は下の <input accept=".gpx"> にフォールバック
                     }
                 }
                 el.inputGpx.value = '';
@@ -1775,14 +1762,14 @@
                 el.videoPlayer.currentTime = Math.min(state.mp4Duration, el.videoPlayer.currentTime + 0.1);
             });
 
-            // 現在の動画再生位置をスタート位置に設定
+            // 現在の動画再生位置を基準位置に設定
             el.btnSetVideoStart.addEventListener('click', () => {
                 const cur = el.videoPlayer.currentTime;
                 setVideoStartOffset(cur);
-                showToast(`MP4スタート位置を ${formatTime(cur)} に設定しました`, 'success');
+                showToast(`MP4基準位置を ${formatTime(cur)} に設定しました`, 'success');
             });
 
-            // 指定済みスタート位置へジャンプ
+            // 指定済み基準位置へジャンプ
             el.btnJumpToVideoStart.addEventListener('click', () => {
                 el.videoPlayer.pause();
                 el.videoPlayer.currentTime = state.mp4StartOffset;
