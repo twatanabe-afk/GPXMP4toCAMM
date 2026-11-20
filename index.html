@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1558</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1636</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を同期し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -126,7 +126,7 @@
         <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- GPXファイルドロップゾーン -->
             <div id="dropZoneGpx" class="relative group rounded-2xl border-2 border-dashed border-slate-700/80 hover:border-emerald-500/60 bg-slate-900/50 p-5 transition-all cursor-pointer flex items-center justify-between gap-4">
-                <input type="file" id="inputGpx" accept=".gpx,.xml,application/gpx+xml,text/xml,*/*" class="hidden">
+                <input type="file" id="inputGpx" accept=".gpx" class="hidden">
                 <div class="flex items-center gap-4 min-w-0">
                     <div id="iconBoxGpx" class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 text-emerald-400 group-hover:scale-105 transition-transform">
                         <i data-lucide="map-pin" class="w-6 h-6"></i>
@@ -460,29 +460,36 @@
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex items-center gap-2 min-w-0">
                                 <i data-lucide="folder" class="w-4 h-4 text-amber-400 shrink-0"></i>
-                                <span id="selectedFolderLabel" class="text-xs font-mono text-slate-200 truncate">ブラウザの標準ダウンロードフォルダ（または保存時に選択）</span>
+                                <span id="selectedFolderLabel" class="text-xs font-mono text-slate-200 truncate">保存実行時にOSの保存ダイアログで場所を指定</span>
                             </div>
                             <button type="button" id="btnPickDirectory" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-sky-300 border border-slate-700 shrink-0 transition flex items-center gap-1.5">
                                 <i data-lucide="folder-open" class="w-3.5 h-3.5"></i>
-                                <span>フォルダを選択...</span>
+                                <span>保存先フォルダを事前指定...</span>
                             </button>
                         </div>
 
                         <p id="saveApiHintText" class="text-[11px] text-slate-400 leading-relaxed">
-                            ※ 「フォルダを選択...」から任意の保存先ディレクトリを指定できます。制限環境（プレビュー枠内等）でOSのフォルダ選択がブロックされる場合は、ブラウザの保存ダイアログ設定またはダウンロードフォルダへ出力されます。
+                            ※ 「この設定で CAMM MP4 を保存」を押すと OS の「名前を付けて保存」ダイアログが開き、保存先フォルダを指定できます（事前指定も可能です）。<br>
+                            ※ プレビュー枠内（iframe）でOSダイアログがブロックされる環境では、右上の「新しいタブで開く」から開くとOSの保存先ダイアログが確実に動作します。
                         </p>
                     </div>
                 </div>
             </div>
 
-            <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-800">
-                <button type="button" id="btnCancelSaveModal" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition">
-                    キャンセル
+            <div class="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-800">
+                <button type="button" id="btnOpenNewTab" class="px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-sky-300 border border-slate-700 font-semibold text-xs transition flex items-center gap-1.5" title="ブラウザ制限を回避してOSの保存ダイアログを使用">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                    <span>別タブで開いて保存</span>
                 </button>
-                <button type="button" id="btnConfirmSaveCamm" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 flex items-center gap-1.5 transition">
-                    <i data-lucide="download" class="w-4 h-4"></i>
-                    <span>この設定で CAMM MP4 を保存</span>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btnCancelSaveModal" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition">
+                        キャンセル
+                    </button>
+                    <button type="button" id="btnConfirmSaveCamm" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 flex items-center gap-1.5 transition">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        <span>この設定で CAMM MP4 を保存</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -494,7 +501,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1558</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1636</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -622,6 +629,7 @@
             selectedFolderLabel: document.getElementById('selectedFolderLabel'),
             btnPickDirectory: document.getElementById('btnPickDirectory'),
             saveApiHintText: document.getElementById('saveApiHintText'),
+            btnOpenNewTab: document.getElementById('btnOpenNewTab'),
             btnConfirmSaveCamm: document.getElementById('btnConfirmSaveCamm'),
 
             btnHelp: document.getElementById('btnHelp'),
@@ -972,6 +980,11 @@
 
         async function handleGpxFile(file) {
             if (!file) return;
+            // .gpx 拡張子のみ許可（ドラッグ＆ドロップ時も厳密チェック）
+            if (!file.name.toLowerCase().endsWith('.gpx')) {
+                showToast('GPXファイル（.gpx）のみ選択できます。', 'error');
+                return;
+            }
             try {
                 const text = await file.text();
                 const points = parseGpxText(text);
@@ -1009,6 +1022,10 @@
          */
         function handleMp4File(file) {
             if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.mp4') && file.type !== 'video/mp4') {
+                showToast('MP4ファイル（.mp4）のみ選択できます。', 'error');
+                return;
+            }
             try {
                 if (state.mp4Url) {
                     URL.revokeObjectURL(state.mp4Url);
@@ -1644,30 +1661,30 @@
             ]);
             const finalMoovBox = Mp4BoxBuilder.box('moov', newMoovBody);
 
-            onProgress('CAMM MP4 バイナリを出力中...', 90);
-            const chunks = [];
-            for (const b of topBoxes) {
-                if (b.type === 'moov') {
-                    chunks.push(finalMoovBox);
-                } else {
-                    chunks.push(rawBytes.subarray(b.offset, b.offset + b.size));
-                }
-            }
-            chunks.push(cammMdatBox);
-
-            onProgress('完了しました！', 100);
-            return new Blob(chunks, { type: 'video/mp4' });
-        }
-
-        /**
-         * ============================================================================
-         * 6. イベントリスナー登録
-         * ============================================================================
-         */
-        function setupEventListeners() {
-            // GPX ドラッグ＆ドロップ / クリック選択
+            // GPX ドラッグ＆ドロップ / クリック選択 (.gpx のみ許可)
             el.inputGpx.addEventListener('click', (e) => e.stopPropagation());
-            el.dropZoneGpx.addEventListener('click', () => {
+            el.dropZoneGpx.addEventListener('click', async () => {
+                // File System Access API の showOpenFilePicker が使える通常ウィンドウでは .gpx のみフィルタを強制
+                const isInIframe = window.self !== window.top;
+                if (typeof window.showOpenFilePicker === 'function' && !isInIframe) {
+                    try {
+                        const [handle] = await window.showOpenFilePicker({
+                            multiple: false,
+                            excludeAcceptAllOption: true,
+                            types: [{
+                                description: 'GPX Track File (*.gpx)',
+                                accept: { 'application/gpx+xml': ['.gpx'] }
+                            }]
+                        });
+                        if (handle) {
+                            const file = await handle.getFile();
+                            handleGpxFile(file);
+                        }
+                        return;
+                    } catch (err) {
+                        if (err.name === 'AbortError') return;
+                    }
+                }
                 el.inputGpx.value = '';
                 el.inputGpx.click();
             });
@@ -1754,26 +1771,45 @@
             el.chkInterpolate.addEventListener('change', updateSummaryMetrics);
 
             // 保存先・ファイル名指定モーダルを開く
-            el.btnGenerateCamm.addEventListener('click', () => {
+            el.btnGenerateCamm.addEventListener('click', async () => {
                 if (!state.mp4File || state.gpxPoints.length === 0) return;
 
                 const baseName = state.mp4File.name.replace(/\.mp4$/i, '');
+                const defaultFileName = `${baseName}_camm.mp4`;
                 el.inputSaveFileName.value = `${baseName}_camm`;
 
-                // 実行環境でフォルダ選択/保存ダイアログAPIが利用可能か判定（iFrame内ではCross-Origin制限がかかる場合がある）
                 const isInIframe = window.self !== window.top;
-                const hasPickerApi = typeof window.showSaveFilePicker === 'function' || typeof window.showDirectoryPicker === 'function';
+                const hasPickerApi = typeof window.showSaveFilePicker === 'function';
 
+                // 通常タブ（非iframe）かつ showSaveFilePicker 対応ブラウザなら直接 OS の保存先ダイアログを開く
                 if (hasPickerApi && !isInIframe) {
-                    el.saveApiStatusBadge.textContent = 'OS保存ダイアログ対応';
-                    el.saveApiStatusBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
-                } else if (isInIframe) {
-                    el.saveApiStatusBadge.textContent = 'プレビュー枠内制限あり';
+                    try {
+                        const fileHandle = await window.showSaveFilePicker({
+                            suggestedName: defaultFileName,
+                            types: [{
+                                description: 'CAMM MP4 Video (*.mp4)',
+                                accept: { 'video/mp4': ['.mp4'] }
+                            }]
+                        });
+                        if (fileHandle) {
+                            await executeCammExport({ fileHandle, finalFileName: fileHandle.name });
+                            return;
+                        }
+                    } catch (err) {
+                        if (err.name === 'AbortError') return; // ユーザーキャンセル時は中断
+                        // 万一失敗した場合は下の保存設定モーダルへフォールバック
+                    }
+                }
+
+                // プレビュー枠（iframe）内や非対応ブラウザでは保存先・ファイル名設定モーダルを表示
+                if (isInIframe) {
+                    el.saveApiStatusBadge.textContent = 'プレビュー枠（iframe）制限中';
                     el.saveApiStatusBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30';
-                    el.saveApiHintText.innerHTML = '※ 現在プレビュー枠（iframe）内で動作しているため、ブラウザのセキュリティ仕様によりOSのフォルダ選択窓がブロックされる場合があります。<strong>「フォルダを選択...」</strong>が反応しない場合は、ここで任意のファイル名を指定して保存するか、ブラウザ設定の「ダウンロード前に各ファイルの保存場所を確認する」を有効にしてください。';
+                    el.btnOpenNewTab.classList.remove('hidden');
                 } else {
                     el.saveApiStatusBadge.textContent = 'ファイル名指定モード';
                     el.saveApiStatusBadge.className = 'text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700';
+                    el.btnOpenNewTab.classList.add('hidden');
                 }
 
                 el.saveModal.classList.remove('hidden');
@@ -1781,10 +1817,19 @@
                 el.inputSaveFileName.select();
             });
 
+            // 新しいタブで開くボタン（iframeの保存先ダイアログ制限を回避）
+            el.btnOpenNewTab.addEventListener('click', () => {
+                const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+                const blob = new Blob([htmlContent], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                showToast('新しいタブでアプリを開きました。そちらではOSの保存先ダイアログが直接使えます。', 'info');
+            });
+
             // フォルダ選択ボタン（showDirectoryPicker）
             el.btnPickDirectory.addEventListener('click', async () => {
                 if (typeof window.showDirectoryPicker !== 'function') {
-                    showToast('お使いのブラウザはフォルダ直接指定APIに対応していません。ファイル名を指定して保存してください。', 'warning');
+                    showToast('お使いのブラウザはフォルダ直接指定APIに対応していません。「別タブで開いて保存」またはブラウザのダウンロード設定をご利用ください。', 'warning');
                     return;
                 }
                 try {
@@ -1796,7 +1841,7 @@
                 } catch (err) {
                     if (err.name === 'AbortError') return;
                     console.warn('showDirectoryPicker blocked or failed:', err);
-                    showToast('現在の環境（プレビュー画面等）ではセキュリティ制限によりフォルダ選択ダイアログを開けませんでした。ファイル名を指定して保存できます。', 'warning');
+                    showToast('現在のプレビュー枠（iframe）ではセキュリティ制限によりOSフォルダ選択窓がブロックされます。「別タブで開いて保存」から実行すると保存先フォルダを指定できます。', 'warning');
                 }
             });
 
@@ -1816,7 +1861,6 @@
                 if (!rawName) {
                     rawName = `${state.mp4File.name.replace(/\.mp4$/i, '')}_camm`;
                 }
-                // 拡張子 .mp4 の正規化
                 const finalFileName = rawName.toLowerCase().endsWith('.mp4') ? rawName : `${rawName}.mp4`;
 
                 let fileHandle = null;
@@ -1835,13 +1879,16 @@
                         if (pickerErr.name === 'AbortError') {
                             return; // ユーザーがOSダイアログをキャンセル
                         }
-                        // iframe等のセキュリティ制限時は下の標準ダウンロード処理へ自動フォールバック
                         fileHandle = null;
                     }
                 }
 
                 closeSaveModal();
+                await executeCammExport({ fileHandle, finalFileName });
+            });
 
+            // CAMM生成＆保存共通処理
+            async function executeCammExport({ fileHandle = null, finalFileName = 'output_camm.mp4' }) {
                 try {
                     el.btnGenerateCamm.disabled = true;
                     el.progressContainer.classList.remove('hidden');
@@ -1883,7 +1930,7 @@
                         a.remove();
 
                         setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
-                        showToast(`「${finalFileName}」のダウンロードを開始しました`, 'success');
+                        showToast(`「${finalFileName}」を保存しました（OS保存ダイアログを使う場合は「別タブで開いて保存」をご利用ください）`, 'success');
                     }
                 } catch (err) {
                     console.error(err);
@@ -1895,7 +1942,7 @@
                         el.progressBar.style.width = '0%';
                     }, 2500);
                 }
-            });
+            }
 
             // ヘルプモーダル開閉
             el.btnHelp.addEventListener('click', () => el.helpModal.classList.remove('hidden'));
