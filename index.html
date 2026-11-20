@@ -102,7 +102,7 @@
                     <h1 class="font-bold text-base sm:text-lg tracking-tight flex items-center gap-2">
                         CAMM MP4 Studio
                         <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Google CAMM Spec</span>
-                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1910</span>
+                        <span id="appVersionBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700" title="ビルド日時ベースのバージョン番号">v2026.11.20-1911</span>
                     </h1>
                     <p class="text-xs text-slate-400 hidden sm:block">GPX軌跡データとMP4動画を基準位置で同期連結し、CAMMメタデータトラックを埋め込みます</p>
                 </div>
@@ -500,7 +500,6 @@
                         </div>
                         <pre id="inspectDebugDump" class="p-3 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed whitespace-pre-wrap"></pre>
                     </div>
-                    </div>
 
                     <!-- 仕様チェックリスト 4項目 -->
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -664,7 +663,7 @@
                 <h3 class="font-bold text-lg text-slate-100 flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-sky-400"></i>
                     <span>CAMM MP4 Studio について</span>
-                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1910</span>
+                    <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">v2026.11.20-1911</span>
                 </h3>
                 <button id="btnCloseHelp" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400">
                     <i data-lucide="x" class="w-5 h-5"></i>
@@ -1849,54 +1848,6 @@
             }
             return false;
         }
-            }
-            const sttsBuf = new Uint8Array(4 + sttsEntries.length * 8);
-            const sttsView = new DataView(sttsBuf.buffer);
-            sttsView.setUint32(0, sttsEntries.length, false);
-            sttsEntries.forEach((e, i) => {
-                sttsView.setUint32(4 + i * 8, e.count, false);
-                sttsView.setUint32(8 + i * 8, e.delta, false);
-            });
-            const stts = B.fullBox('stts', 0, 0, sttsBuf);
-
-            // 7. stsc (Sample To Chunk Box) - 全サンプルを1つの連続チャンクとして格納（ExifTool/StreetView標準形式）
-            const stscBuf = new Uint8Array(16);
-            const stscView = new DataView(stscBuf.buffer);
-            stscView.setUint32(0, 1, false);              // entry_count = 1
-            stscView.setUint32(4, 1, false);              // first_chunk = 1
-            stscView.setUint32(8, samples.length, false); // samples_per_chunk = all samples
-            stscView.setUint32(12, 1, false);             // sample_description_index = 1
-            const stsc = B.fullBox('stsc', 0, 0, stscBuf);
-
-            // 8. stsz (Sample Size Box) - 各サンプル固定60バイト
-            const stszBuf = new Uint8Array(8);
-            const stszView = new DataView(stszBuf.buffer);
-            stszView.setUint32(0, 60, false);             // sample_size = 60 (uniform)
-            stszView.setUint32(4, samples.length, false); // sample_count
-            const stsz = B.fullBox('stsz', 0, 0, stszBuf);
-
-            // 9. stco / co64 (Chunk Offset Box) - 連続チャンクの先頭ファイルオフセットを記録
-            let stco;
-            if (cammDataStartOffset <= 0xffffffff) {
-                const stcoBuf = new Uint8Array(8);
-                const stcoView = new DataView(stcoBuf.buffer);
-                stcoView.setUint32(0, 1, false);                          // entry_count = 1
-                stcoView.setUint32(4, cammDataStartOffset >>> 0, false);  // chunk_offset
-                stco = B.fullBox('stco', 0, 0, stcoBuf);
-            } else {
-                const co64Buf = new Uint8Array(12);
-                const co64View = new DataView(co64Buf.buffer);
-                co64View.setUint32(0, 1, false); // entry_count = 1
-                co64View.setUint32(4, Math.floor(cammDataStartOffset / 4294967296), false);
-                co64View.setUint32(8, cammDataStartOffset >>> 0, false);
-                stco = B.fullBox('co64', 0, 0, co64Buf);
-            }
-
-            const stbl = B.box('stbl', stsd, stts, stsc, stsz, stco);
-            const minf = B.box('minf', nmhd, dinf, stbl);
-            const mdia = B.box('mdia', mdhd, hdlr, minf);
-            return B.box('trak', tkhd, edts, mdia);
-        }
 
         /**
          * 標準MP4 / QuickTime / 3GPP 互換のGPSメタデータボックス ('udta') を構築
@@ -2338,6 +2289,66 @@
             el.inspectorResultArea.classList.remove('hidden');
             el.inspectFileName.textContent = res.fileName;
             el.inspectFileMeta.textContent = `${(res.fileSize / (1024 * 1024)).toFixed(2)} MB • ${res.topBoxes.length} トップレベルボックス検出`;
+
+            const gpsPackets = res.decodedPackets.filter(p => p.type === 6 && p.lat !== null);
+            const hasCamm = Boolean(res.cammTrack);
+            const isMetaHdlr = res.cammTrack && res.cammTrack.handlerType === 'meta';
+            const hasGps = gpsPackets.length > 0;
+            const hasStdTags = res.udtaTags.length > 0;
+
+            // 総合判定バナー
+            if (hasCamm && hasGps) {
+                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-emerald-950/50 border-emerald-500/40 text-emerald-100 flex items-start justify-between gap-3';
+                el.inspectVerdictIcon.setAttribute('data-lucide', 'check-circle-2');
+                el.inspectVerdictIcon.className = 'w-5 h-5 text-emerald-400 shrink-0 mt-0.5';
+                el.inspectVerdictTitle.textContent = '合格：Google CAMM 仕様の GPS メタデータトラックを正常に検出しました';
+                el.inspectVerdictDesc.textContent = `トラック #${res.cammTrack.id} (hdlr='${res.cammTrack.handlerType}', stsd='camm') 内に ${gpsPackets.length} 個の有効な Type 6 GPS パケットを確認しました。`;
+            } else if (hasCamm && !hasGps) {
+                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-amber-950/50 border-amber-500/40 text-amber-100 flex items-start justify-between gap-3';
+                el.inspectVerdictIcon.setAttribute('data-lucide', 'alert-triangle');
+                el.inspectVerdictIcon.className = 'w-5 h-5 text-amber-400 shrink-0 mt-0.5';
+                el.inspectVerdictTitle.textContent = '注意：camm トラックは存在しますが有効な GPS パケットが読み取れませんでした';
+                el.inspectVerdictDesc.textContent = 'Type 6 GPS パケットが含まれていないか、チャンクオフセットが一致していません。下のバイナリ診断ログを確認してください。';
+            } else {
+                el.inspectVerdictBanner.className = 'rounded-xl p-4 border bg-rose-950/50 border-rose-500/40 text-rose-100 flex items-start justify-between gap-3';
+                el.inspectVerdictIcon.setAttribute('data-lucide', 'x-circle');
+                el.inspectVerdictIcon.className = 'w-5 h-5 text-rose-400 shrink-0 mt-0.5';
+                el.inspectVerdictTitle.textContent = '未検出：CAMM メタデータトラック (camm) が見つかりませんでした';
+                el.inspectVerdictDesc.textContent = 'この MP4 ファイルには Google CAMM 形式のメタデータトラックが含まれていません。';
+            }
+            lucide.createIcons({ root: el.inspectVerdictBanner });
+
+            // 4項目ステータス
+            el.chkCammTrack.textContent = hasCamm ? `検出 (Track #${res.cammTrack.id})` : '未検出';
+            el.chkCammTrack.className = `font-mono text-sm font-bold mt-1 ${hasCamm ? 'text-emerald-400' : 'text-rose-400'}`;
+
+            el.chkHdlrType.textContent = res.cammTrack ? `'${res.cammTrack.handlerType}'` : '--';
+            el.chkHdlrType.className = `font-mono text-sm font-bold mt-1 ${isMetaHdlr ? 'text-emerald-400' : 'text-amber-300'}`;
+
+            el.chkGpsPackets.textContent = `${gpsPackets.length} 件`;
+            el.chkGpsPackets.className = `font-mono text-sm font-bold mt-1 ${hasGps ? 'text-emerald-400' : 'text-rose-400'}`;
+
+            el.chkStandardTags.textContent = hasStdTags ? res.udtaTags.join(', ') : 'なし';
+            el.chkStandardTags.className = `font-mono text-xs font-bold mt-1 truncate ${hasStdTags ? 'text-sky-300' : 'text-slate-400'}`;
+
+            // トラック＆ボックス一覧
+            el.inspectBoxSummary.textContent = `${res.topBoxes.map(b => b.type).join(' → ')}`;
+            el.inspectTracksList.innerHTML = res.tracks.map(t => {
+                const isCamm = t.sampleFormats.includes('camm');
+                return `
+                    <div class="p-2.5 rounded-lg border ${isCamm ? 'bg-emerald-950/30 border-emerald-500/40' : 'bg-slate-900 border-slate-800'}">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold ${isCamm ? 'text-emerald-300' : 'text-slate-200'}">Track #${t.id} (${t.handlerType || '?'})</span>
+                            <span class="px-1.5 py-0.5 rounded text-[10px] ${isCamm ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'}">
+                                format: ${t.sampleFormats.join(', ') || 'unknown'}
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-1">
+                            samples: ${t.sampleCount} • chunks: ${t.chunkOffsets.length} • name: "${t.handlerName}"
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             // バイナリ診断ログ & Hexダンプの表示
             el.inspectDebugOffsetBadge.textContent = res.firstChunkOffset !== null
